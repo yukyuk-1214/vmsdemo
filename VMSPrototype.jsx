@@ -1409,14 +1409,17 @@ export default function App() {
   const handleRegister = (acc) => { setAccounts((a) => [...a, acc]); };
   const handleLogout = () => { setAuthUser(null); setUserOpen(false); };
 
+  const allowedNav = NAV.filter((n) => MODULE_ACCESS[n.id].includes(role));
+
+  // If current page not allowed for role, fall back to first allowed page.
+  // NOTE: this hook must stay ABOVE the early return below, otherwise the hook
+  // count changes between the login screen and the app, crashing React.
+  useEffect(() => { if (!MODULE_ACCESS[page].includes(role)) setPage(allowedNav[0]?.id || "dashboard"); }, [role]); // eslint-disable-line
+
   // Gate the whole portal behind authentication.
   if (!authUser) {
     return <LoginScreen accounts={accounts} onLogin={handleLogin} onRegister={handleRegister} />;
   }
-  const allowedNav = NAV.filter((n) => MODULE_ACCESS[n.id].includes(role));
-
-  // If current page not allowed for role, fall back to first allowed page.
-  useEffect(() => { if (!MODULE_ACCESS[page].includes(role)) setPage(allowedNav[0]?.id || "dashboard"); }, [role]); // eslint-disable-line
 
   const RoleIcon = ROLES[role].icon;
   const fmtDate = now.toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
