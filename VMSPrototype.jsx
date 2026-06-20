@@ -6,7 +6,7 @@ import {
   CircleUser, ShieldCheck, Building, HardHat, Truck, Bus, Printer,
   AlertTriangle, MapPin, Filter, RotateCcw, Terminal,
   Lock, Mail, User as UserIcon, LogOut, Eye, EyeOff, AlertCircle, Menu,
-  ChevronLeft, ChevronRight, SlidersHorizontal, ArrowDownUp,
+  ChevronLeft, ChevronRight, SlidersHorizontal, ArrowDownUp, Link2, CornerDownRight,
 } from "lucide-react";
 
 /* =========================================================================
@@ -72,6 +72,62 @@ function loadScript(src) {
   });
 }
 
+/* Bilingual (中英對照) receipt printed via the browser — drives a real/thermal
+   receipt printer through the print dialog (and supports "Save as PDF"). Chinese
+   renders natively, unlike jsPDF's Latin-only built-in fonts. 80mm layout. */
+function printReceiptDoc(r) {
+  const money = `HK$ ${Number(r.amount).toFixed(2)}`;
+  const rows = [
+    ["License Plate", "車牌", r.lpn],
+    ["Tenant", "租戶", r.tenant],
+    ["Floor / Gate", "樓層 / 閘口", `${r.floor} · ${r.gate}`],
+    ["Vehicle Type", "車種", r.vehicleType],
+    ["Entry Time", "入場時間", r.entry],
+    ["Exit Time", "出場時間", r.exit],
+    ["Payment Time", "付款時間", r.payTime],
+    ["Payment Method", "付款方式", r.method],
+    ["Transaction No", "交易編號", r.txnNo || "-"],
+  ];
+  const rowsHtml = rows.map(([en, zh, v]) =>
+    `<tr><td class="k"><div>${en}</div><div class="zh">${zh}</div></td><td class="v">${v}</td></tr>`
+  ).join("");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Receipt ${r.receiptNo || ""}</title>
+  <style>
+    @page { size: 80mm auto; margin: 4mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { width: 72mm; margin: 0 auto; font-family: "Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif; color: #111; font-size: 12px; }
+    .hd { text-align:center; border-bottom:2px solid #1A5CFF; padding-bottom:6px; margin-bottom:8px; }
+    .hd .b { font-weight:700; font-size:14px; color:#1A5CFF; letter-spacing:.5px; }
+    .hd .s { font-size:11px; color:#444; margin-top:2px; }
+    .ttl { text-align:center; font-weight:700; margin:6px 0; }
+    .ttl .zh { font-weight:400; font-size:11px; color:#555; }
+    .rno { text-align:center; font-size:11px; color:#666; margin-bottom:6px; }
+    table { width:100%; border-collapse:collapse; }
+    td { padding:4px 0; vertical-align:top; border-bottom:1px dotted #ccc; }
+    td.k { color:#555; font-size:11px; }
+    td.k .zh { color:#999; font-size:10px; }
+    td.v { text-align:right; font-weight:600; font-family:"Courier New",monospace; }
+    .total { display:flex; justify-content:space-between; align-items:center; margin-top:8px; padding:8px; background:#eef3ff; border-radius:6px; font-weight:700; color:#1A5CFF; }
+    .total .zh { font-size:10px; color:#5577cc; font-weight:400; }
+    .ft { text-align:center; color:#888; font-size:9.5px; margin-top:10px; line-height:1.5; }
+  </style></head><body>
+    <div class="hd"><div class="b">CAINIAO SMART GATEWAY</div><div class="s">Smart Cainiao Hub · 智慧菜鳥港</div></div>
+    <div class="ttl">OFFICIAL RECEIPT<div class="zh">正式收據</div></div>
+    <div class="rno">Receipt No / 收據編號: ${r.receiptNo || "CN-" + (r.id ?? 0)}</div>
+    <table>${rowsHtml}</table>
+    <div class="total"><span>TOTAL PAID<div class="zh">應付總額</div></span><span>${money}</span></div>
+    <div class="ft">This is a computer-generated receipt · 此乃電腦列印收據<br/>CBRE Facility Operations · VMS Prototype</div>
+  </body></html>`;
+
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+  document.body.appendChild(iframe);
+  const d = iframe.contentWindow.document;
+  d.open(); d.write(html); d.close();
+  iframe.contentWindow.focus();
+  setTimeout(() => { iframe.contentWindow.print(); setTimeout(() => iframe.remove(), 1500); }, 300);
+}
+
 /* Client-side PDF receipt/invoice export with sample data (jsPDF via CDN). */
 async function exportReceiptPDF(r) {
   await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
@@ -83,16 +139,18 @@ async function exportReceiptPDF(r) {
   // Header band
   doc.setFillColor(...blue); doc.rect(0, 0, 320, 70, "F");
   doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(16);
-  doc.text("CAINIAO SMART GATEWAY", M, 30);
+  doc.text("CAINIAO SMART GATEWAY", M, 32);
   doc.setFont("helvetica", "normal"); doc.setFontSize(9);
-  doc.text("Smart Cainiao Hub · Carpark Payment Receipt", M, 46);
-  doc.setFontSize(8); doc.text("智慧菜鳥港", M, 60);
+  // NOTE: jsPDF's built-in fonts are Latin-only — CJK text would render as garbled
+  // boxes, so the receipt is kept English-only.
+  doc.text("Smart Cainiao Hub - Carpark Payment Receipt", M, 50);
 
-  // Title
+  // Customer-facing receipt — always a clean OFFICIAL RECEIPT with the correct plate.
+  // Plate corrections are internal/audit only and never disclosed to the customer.
   doc.setTextColor(30); doc.setFont("helvetica", "bold"); doc.setFontSize(13);
   doc.text("OFFICIAL RECEIPT", M, 100);
   doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(120);
-  doc.text(`Receipt No: CN-${(r.id ?? 0).toString().padStart(6, "0")}`, M, 116);
+  doc.text(`Receipt No: ${r.receiptNo ?? "CN-" + (r.id ?? 0).toString().padStart(6, "0")}`, M, 116);
 
   // Rows
   const rows = [
@@ -104,6 +162,7 @@ async function exportReceiptPDF(r) {
     ["Exit Time", r.exit],
     ["Payment Time", r.payTime],
     ["Payment Method", r.method],
+    ["Transaction No", r.txnNo || "-"],
   ];
   let y = 142; doc.setFontSize(10);
   rows.forEach(([k, v]) => {
@@ -151,36 +210,54 @@ const ROLES = {
 
 const MODULE_ACCESS = {
   dashboard:  ["BMO", "Tenant", "Guard", "FM"],
-  users:      ["BMO"],
+  users:      ["BMO", "Tenant"], // Tenant admins manage their own tenant's users
+
   tenants:    ["BMO", "FM"],
   vehicles:   ["BMO", "Tenant"],
   records:    ["BMO", "Guard", "FM"],
   pos:        ["BMO", "FM"],
   cctv:       ["BMO", "Guard"],
-  reports:    ["BMO", "FM"],
+  reports:    ["BMO", "FM", "Tenant"],
   audit:      ["BMO"],
   syslog:     ["BMO"],
 };
 
 /* ------------------------------- Mock Data ------------------------------- */
+// floors[] = carpark floors assigned to the tenant (no gate needed at tenant level).
+// status + activeFrom/activeTo control whether the tenant (and its users) may log in.
 const TENANTS = [
-  { id: 1, en: "Cainiao Logistics HK", zh: "菜鳥物流香港", email: "ops@cainiao.hk", phone: "+852 2888 1000", floor: "L3", gate: "North Gate", whitelist: 50, spaceLimit: 30, used: 24 },
-  { id: 2, en: "DHL Express Asia", zh: "敦豪速遞亞洲", email: "hub@dhl.com", phone: "+852 2400 3388", floor: "L4", gate: "South Gate", whitelist: 40, spaceLimit: 25, used: 19 },
-  { id: 3, en: "SF Express", zh: "順豐速運", email: "depot@sf-express.com", phone: "+852 2730 0273", floor: "L2", gate: "North Gate", whitelist: 35, spaceLimit: 20, used: 18 },
-  { id: 4, en: "Kerry Logistics", zh: "嘉里物流", email: "fleet@kerrylogistics.com", phone: "+852 2410 3600", floor: "L6", gate: "South Gate", whitelist: 30, spaceLimit: 18, used: 8 },
-  { id: 5, en: "JD Logistics HK", zh: "京東物流香港", email: "hk@jdl.com", phone: "+852 3622 1200", floor: "L7", gate: "South Gate", whitelist: 28, spaceLimit: 15, used: 12 },
-  { id: 6, en: "Yamato Transport", zh: "大和運輸", email: "hub@yamato.hk", phone: "+852 2865 0000", floor: "L5", gate: "South Gate", whitelist: 22, spaceLimit: 12, used: 7 },
-  { id: 7, en: "FedEx Trade Networks", zh: "聯邦快遞", email: "ops@fedex.com", phone: "+852 2730 3333", floor: "L9", gate: "South Gate", whitelist: 20, spaceLimit: 10, used: 9 },
-  { id: 8, en: "Lalamove Fleet", zh: "貨拉拉車隊", email: "fleet@lalamove.com", phone: "+852 3008 0000", floor: "L11", gate: "South Gate", whitelist: 18, spaceLimit: 8, used: 3 },
+  { id: 1, en: "Cainiao Logistics HK", zh: "菜鳥物流香港", email: "ops@cainiao.hk", phone: "+852 2888 1000", floor: "L3", gate: "North Gate", floors: ["L3", "L8"], whitelist: 50, spaceLimit: 30, used: 24, status: "Active", activeFrom: "2026-01-01", activeTo: "2026-12-31", logo: null, whitelistPlates: ["RA1234", "TM5566", "CN8888"], blacklistPlates: ["BX0001"] },
+  { id: 2, en: "DHL Express Asia", zh: "敦豪速遞亞洲", email: "hub@dhl.com", phone: "+852 2400 3388", floor: "L4", gate: "South Gate", floors: ["L4"], whitelist: 40, spaceLimit: 25, used: 19, status: "Active", activeFrom: "2026-01-01", activeTo: "2026-12-31", logo: null },
+  { id: 3, en: "SF Express", zh: "順豐速運", email: "depot@sf-express.com", phone: "+852 2730 0273", floor: "L2", gate: "North Gate", floors: ["L2"], whitelist: 35, spaceLimit: 20, used: 18, status: "Active", activeFrom: "2026-01-01", activeTo: "2026-12-31", logo: null },
+  { id: 4, en: "Kerry Logistics", zh: "嘉里物流", email: "fleet@kerrylogistics.com", phone: "+852 2410 3600", floor: "L6", gate: "South Gate", floors: ["L6"], whitelist: 30, spaceLimit: 18, used: 8, status: "Active", activeFrom: "2026-01-01", activeTo: "2026-12-31", logo: null },
+  { id: 5, en: "JD Logistics HK", zh: "京東物流香港", email: "hk@jdl.com", phone: "+852 3622 1200", floor: "L7", gate: "South Gate", floors: ["L7", "L10"], whitelist: 28, spaceLimit: 15, used: 12, status: "Active", activeFrom: "2026-01-01", activeTo: "2026-12-31", logo: null },
+  { id: 6, en: "Yamato Transport", zh: "大和運輸", email: "hub@yamato.hk", phone: "+852 2865 0000", floor: "L5", gate: "South Gate", floors: ["L5"], whitelist: 22, spaceLimit: 12, used: 7, status: "Active", activeFrom: "2026-01-01", activeTo: "2026-12-31", logo: null },
+  { id: 7, en: "FedEx Trade Networks", zh: "聯邦快遞", email: "ops@fedex.com", phone: "+852 2730 3333", floor: "L9", gate: "South Gate", floors: ["L9"], whitelist: 20, spaceLimit: 10, used: 9, status: "Active", activeFrom: "2026-01-01", activeTo: "2026-12-31", logo: null },
+  { id: 8, en: "Lalamove Fleet", zh: "貨拉拉車隊", email: "fleet@lalamove.com", phone: "+852 3008 0000", floor: "L11", gate: "South Gate", floors: ["L11", "L12"], whitelist: 18, spaceLimit: 8, used: 3, status: "Inactive", activeFrom: "2026-01-01", activeTo: "2026-05-31", logo: null },
 ];
 
+// A tenant (and therefore its users) can sign in only while it is Active and within its period.
+function isTenantActive(t) {
+  if (!t) return false;
+  if (t.status !== "Active") return false;
+  if (t.activeFrom && TODAY < t.activeFrom) return false;
+  if (t.activeTo && TODAY > t.activeTo) return false;
+  return true;
+}
+
+// "Today" reference for activation-date logic (accounts active in the future show as Scheduled).
+const TODAY = "2026-06-19";
+// Capabilities a Tenant admin can grant to the sub-users they create.
+const TENANT_PERMISSIONS = ["View In/Out Records", "Manage Vehicle Whitelist", "View CCTV", "View POS / Payments"];
+
 const USERS = [
-  { id: 1, name: "Andy Chan", account: "andy.chan", role: "BMO", status: "Active" },
-  { id: 2, name: "Tenant Admin (Cainiao)", account: "cainiao.admin", role: "Tenant", status: "Active" },
-  { id: 3, name: "Wong Ka Ho", account: "kaho.wong", role: "Guard", status: "Active" },
-  { id: 4, name: "Priya Sharma", account: "priya.fm", role: "FM", status: "Active" },
-  { id: 5, name: "Tenant Admin (DHL)", account: "dhl.admin", role: "Tenant", status: "Inactive" },
-  { id: 6, name: "Lau Chi Keung", account: "ck.lau", role: "Guard", status: "Active" },
+  { id: 1, name: "Andy Chan", account: "andy.chan", role: "BMO", status: "Active", tenant: "", activeFrom: "2026-01-01", permissions: [] },
+  { id: 2, name: "Tenant Admin (Cainiao)", account: "cainiao.admin", role: "Tenant", status: "Active", tenant: "Cainiao Logistics HK", activeFrom: "2026-01-15", permissions: [...TENANT_PERMISSIONS] },
+  { id: 3, name: "Wong Ka Ho", account: "kaho.wong", role: "Guard", status: "Active", tenant: "", activeFrom: "2026-02-01", permissions: [] },
+  { id: 4, name: "Priya Sharma", account: "priya.fm", role: "FM", status: "Active", tenant: "", activeFrom: "2026-01-20", permissions: [] },
+  { id: 5, name: "Tenant Admin (DHL)", account: "dhl.admin", role: "Tenant", status: "Inactive", tenant: "DHL Express Asia", activeFrom: "2026-07-01", permissions: ["View In/Out Records", "View CCTV"] },
+  { id: 6, name: "Lau Chi Keung", account: "ck.lau", role: "Guard", status: "Active", tenant: "", activeFrom: "2026-03-01", permissions: [] },
+  { id: 7, name: "Cainiao Gate Operator", account: "cn.gate01", role: "Tenant", status: "Active", tenant: "Cainiao Logistics HK", activeFrom: "2026-03-10", permissions: ["View In/Out Records", "Manage Vehicle Whitelist"] },
 ];
 
 // Mock credential store for the login / register flow (prototype only — not secure).
@@ -189,7 +266,7 @@ const SEED_ACCOUNTS = [
   { login: "andy.chan", password: "cainiao123", name: "Andy Chan", role: "BMO", email: "andy.chan@cainiao.hk" },
   { login: "kaho.wong", password: "cainiao123", name: "Wong Ka Ho", role: "Guard", email: "kaho.wong@cbre.com" },
   { login: "priya.fm", password: "cainiao123", name: "Priya Sharma", role: "FM", email: "priya.sharma@cbre.com" },
-  { login: "cainiao.admin", password: "cainiao123", name: "Tenant Admin (Cainiao)", role: "Tenant", email: "admin@cainiao.hk" },
+  { login: "cainiao.admin", password: "cainiao123", name: "Tenant Admin (Cainiao)", role: "Tenant", email: "admin@cainiao.hk", tenant: "Cainiao Logistics HK" },
 ];
 
 const VEHICLE_TYPES = ["Private Car", "Van", "Truck"];
@@ -202,11 +279,34 @@ const VEHICLES = [
   { id: 3, lpn: "TM5566", tenant: "SF Express", category: "Whitelist", gate: "North Gate", floor: "L2", from: "2026-03-15", to: "2026-09-15", priority: 2, status: "Active", createdAt: "2026-03-15 11:30", modifiedAt: "2026-05-02 16:05", deletedAt: null },
   { id: 4, lpn: "GK4099", tenant: "Kerry Logistics", category: "Temp", gate: "South Gate", floor: "L6", from: "2026-06-19", to: "2026-06-19", priority: 1, status: "Deleted", createdAt: "2026-06-19 07:40", modifiedAt: "2026-06-19 07:40", deletedAt: "2026-06-19 07:58 · andy.chan" },
   { id: 5, lpn: "BX0001", tenant: "—", category: "Blacklist", gate: "—", floor: "—", from: "—", to: "—", priority: 0, status: "Active", createdAt: "2026-02-20 10:00", modifiedAt: "2026-02-20 10:00", deletedAt: null },
-  { id: 6, lpn: "JD7012", tenant: "JD Logistics HK", category: "Whitelist", gate: "South Gate", floor: "L7", from: "2026-01-10", to: "2026-12-31", priority: 1, status: "Active", createdAt: "2026-01-10 13:15", modifiedAt: "2026-04-18 09:44", deletedAt: null },
+  { id: 6, lpn: "JD7012", tenant: "JD Logistics HK", category: "Whitelist", gate: "South Gate", floor: "L7", from: "2026-01-10", to: "2026-12-31", priority: 1, status: "Active", createdAt: "2026-01-10 13:15", modifiedAt: "2026-04-18 09:44", deletedAt: null, correctedFrom: null },
+  // Example correction: ANPR mis-read "KL2O88" (O vs 0); guard manual-opened the gate,
+  // and after the vehicle left, a corrected record was added and linked back for audit.
+  { id: 7, lpn: "KL2088", tenant: "Kerry Logistics", category: "Whitelist", gate: "South Gate", floor: "L6", from: "2026-06-19", to: "2026-12-31", priority: 1, status: "Active", createdAt: "2026-06-19 09:25", modifiedAt: "2026-06-19 09:25", deletedAt: null,
+    correctedFrom: { plate: "KL2O88", ref: "Manual Gate Open · South Gate · L6 · 2026-06-19 08:50", reason: "ANPR mis-read (O↔0)", at: "2026-06-19 09:25 · kaho.wong" } },
 ];
 
 const GATE_REASONS = ["Rubbish Car", "Carpark Full", "VIP", "Delivery", "Others"];
-const PAYMENT_METHODS = ["Octopus", "H5 (WeChat / Alipay)", "Visa / Master"];
+
+// Manual gate-open events — shared across CCTV / In-Out, and referenced by Vehicle
+// Management corrections so the whole audit chain links up.
+const SEED_GATE_EVENTS = [
+  { id: "MG-1001", time: "2026-06-19 08:50", floor: "L6", gate: "South Gate", plate: "KL2O88", reason: "ANPR mis-read", by: "kaho.wong" },
+  { id: "MG-1002", time: "2026-06-19 09:05", floor: "L3", gate: "North Gate", plate: "(unread)", reason: "No plate detected", by: "kaho.wong" },
+];
+const gateEventLabel = (ev) => `${ev.id} · ${ev.gate} · ${ev.floor} · ${ev.time} (${ev.plate})`;
+const PAYMENT_METHODS = ["Octopus", "WeChat", "Alipay", "Visa / Master"];
+
+// Each payment gateway returns its own transaction-reference format.
+function gatewayTxn(method, i) {
+  switch (method) {
+    case "Octopus":      return `OCT-${5100000 + i * 137}`;
+    case "WeChat":       return `WX2026${String(100000 + i * 7)}`;
+    case "Alipay":       return `ALI2026${String(200000 + i * 11)}`;
+    case "Visa / Master": return `VM-AUTH-${300000 + i * 53}`;
+    default:             return "—";
+  }
+}
 
 function genRecords(kind) {
   const rows = [];
@@ -229,15 +329,18 @@ function genRecords(kind) {
   return rows;
 }
 
+// paid = settled (receipt issued). status: Original | Corrected (superseded) | Amended (reissue).
 const POS_RECORDS = Array.from({ length: 14 }, (_, i) => {
   const t = TENANTS[i % TENANTS.length];
+  const paid = i % 5 !== 2; // a few records are still pending (not settled)
+  const method = paid ? PAYMENT_METHODS[i % PAYMENT_METHODS.length] : "—";
   return {
-    id: i, lpn: ["RA", "VP", "TM"][i % 3] + String(2200 + i * 31),
+    id: i, receiptNo: `CN-${String(100200 + i)}`, lpn: ["RA", "VP", "TM"][i % 3] + String(2200 + i * 31),
     gate: gatesForFloor(t.floor)[0], vehicleType: VEHICLE_TYPES[i % 3], floor: t.floor, tenant: t.en,
     entry: `2026-06-19 0${7 + (i % 3)}:1${i % 6}`, exit: `2026-06-19 ${10 + (i % 5)}:2${i % 6}`,
-    payTime: `2026-06-19 ${10 + (i % 5)}:2${(i % 6) + 1}`,
-    method: PAYMENT_METHODS[i % PAYMENT_METHODS.length],
-    amount: 25 + (i % 6) * 15,
+    payTime: paid ? `2026-06-19 ${10 + (i % 5)}:2${(i % 6) + 1}` : "—",
+    method, txnNo: paid ? gatewayTxn(method, i) : "—",
+    amount: 25 + (i % 6) * 15, paid, status: "Original", correctedFrom: null, amends: null, supersededBy: null,
   };
 });
 
@@ -258,7 +361,7 @@ const TRUCK_TRIPS = [
     steps: [
       { type: "in",   gate: "North Gate", floor: "L1", time: "2026-06-19 08:05", note: "ANPR entry" },
       { type: "gate", gate: "North Gate", floor: "L2", time: "2026-06-19 08:14", note: "Dock 3" },
-      { type: "pay",  gate: "POS · H5", floor: "L1", time: "2026-06-19 10:02", note: "H5 (WeChat / Alipay)", amount: 95 },
+      { type: "pay",  gate: "POS · WeChat", floor: "L1", time: "2026-06-19 10:02", note: "WeChat", amount: 95 },
       { type: "out",  gate: "North Gate", floor: "L1", time: "2026-06-19 10:11", note: "ANPR exit" },
     ],
   },
@@ -507,47 +610,120 @@ function Dashboard() {
   );
 }
 
-function UserManagement({ toast }) {
+function UserManagement({ toast, role, authUser }) {
   const [users, setUsers] = useState(USERS);
   const [modal, setModal] = useState(null); // {mode, user}
+  const [form, setForm] = useState({ name: "", account: "", role: "BMO", status: "Active", tenant: "", activeFrom: TODAY, permissions: [] });
   const roleColor = { BMO: "blue", Tenant: "violet", Guard: "amber", FM: "emerald" };
 
+  // A Tenant admin only manages users within their own tenant.
+  const isTenantAdmin = role === "Tenant";
+  const myTenant = authUser?.tenant || "";
+  const visibleUsers = isTenantAdmin ? users.filter((u) => u.tenant === myTenant) : users;
+
+  const blankUser = isTenantAdmin
+    ? { name: "", account: "", role: "Tenant", status: "Active", tenant: myTenant, activeFrom: TODAY, permissions: [] }
+    : { name: "", account: "", role: "BMO", status: "Active", tenant: "", activeFrom: TODAY, permissions: [] };
+
+  const openModal = (mode, user) => {
+    setForm({
+      name: user.name, account: user.account, role: user.role, status: user.status,
+      tenant: user.tenant || "", activeFrom: user.activeFrom || TODAY, permissions: user.permissions || [],
+    });
+    setModal({ mode, user });
+  };
   const save = () => { toast(modal.mode === "add" ? "User account created" : "User account updated"); setModal(null); };
   const del = (id) => { setUsers((u) => u.filter((x) => x.id !== id)); toast("User account deleted"); };
+  const togglePerm = (p) => setForm((f) => ({ ...f, permissions: f.permissions.includes(p) ? f.permissions.filter((x) => x !== p) : [...f.permissions, p] }));
+
+  // Future activation date => account is scheduled, not yet active.
+  const effStatus = (u) => (u.activeFrom && u.activeFrom > TODAY ? "Scheduled" : u.status);
+  const showPermsField = form.role === "Tenant"; // permissions apply to tenant sub-accounts
 
   return (
     <div>
-      <SectionTitle icon={Users} title="User Management" desc="Account directory · Role-based access control">
-        <Btn onClick={() => setModal({ mode: "add", user: { name: "", account: "", role: "BMO", status: "Active" } })}><Plus className="h-4 w-4" /> Add User</Btn>
+      <SectionTitle icon={Users}
+        title="User Management"
+        desc={isTenantAdmin ? `Manage your tenant users · ${myTenant}` : "Account directory · Role-based access control"}>
+        <Btn onClick={() => openModal("add", blankUser)}><Plus className="h-4 w-4" /> Add User</Btn>
       </SectionTitle>
       <DataTable
-        columns={["Account Name", "Login", "Role", "Status", ""]}
-        rows={users}
-        searchKeys={["name", "account", "role"]}
-        sortKeys={[{ key: "name", label: "Name", cmp: (a, b) => a.name.localeCompare(b.name) }, { key: "role", label: "Role", cmp: (a, b) => a.role.localeCompare(b.role) }]}
-        renderRow={(u) => (
-          <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50">
-            <td className="px-4 py-3"><div className="flex items-center gap-2"><CircleUser className="h-7 w-7 text-slate-300" /><span className="font-medium text-slate-800">{u.name}</span></div></td>
-            <td className="px-4 py-3 text-slate-500">{u.account}</td>
-            <td className="px-4 py-3"><Badge color={roleColor[u.role]}>{u.role}</Badge></td>
-            <td className="px-4 py-3"><Badge color={u.status === "Active" ? "emerald" : "slate"}>{u.status}</Badge></td>
-            <td className="px-4 py-3"><div className="flex justify-end gap-2">
-              <Btn variant="outline" onClick={() => setModal({ mode: "edit", user: u })}><Pencil className="h-3.5 w-3.5" /> Edit</Btn>
-              <Btn variant="danger" onClick={() => del(u.id)}><Trash2 className="h-3.5 w-3.5" /></Btn>
-            </div></td>
-          </tr>
-        )}
+        columns={["Account Name", "Login", "Role", "Active From", "Status", ""]}
+        rows={visibleUsers}
+        searchKeys={["name", "account", "role", "tenant"]}
+        sortKeys={[{ key: "name", label: "Name", cmp: (a, b) => a.name.localeCompare(b.name) }, { key: "role", label: "Role", cmp: (a, b) => a.role.localeCompare(b.role) }, { key: "activeFrom", label: "Active From", cmp: (a, b) => (a.activeFrom || "").localeCompare(b.activeFrom || "") }]}
+        renderRow={(u) => {
+          const st = effStatus(u);
+          return (
+            <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50">
+              <td className="px-4 py-3"><div className="flex items-center gap-2"><CircleUser className="h-7 w-7 text-slate-300" /><span className="font-medium text-slate-800">{u.name}</span></div></td>
+              <td className="px-4 py-3 text-slate-500">{u.account}</td>
+              <td className="px-4 py-3">
+                <div className="flex flex-col gap-0.5">
+                  <Badge color={roleColor[u.role]}>{u.role}</Badge>
+                  {u.role === "Tenant" && u.tenant && (
+                    <span className="text-xs text-slate-500">{u.tenant}{u.permissions?.length ? ` · ${u.permissions.length} perms` : ""}</span>
+                  )}
+                </div>
+              </td>
+              <td className="px-4 py-3 text-slate-500">{u.activeFrom || "—"}</td>
+              <td className="px-4 py-3"><Badge color={st === "Active" ? "emerald" : st === "Scheduled" ? "amber" : "slate"}>{st}</Badge></td>
+              <td className="px-4 py-3"><div className="flex justify-end gap-2">
+                <Btn variant="outline" onClick={() => openModal("edit", u)}><Pencil className="h-3.5 w-3.5" /> Edit</Btn>
+                <Btn variant="danger" onClick={() => del(u.id)}><Trash2 className="h-3.5 w-3.5" /></Btn>
+              </div></td>
+            </tr>
+          );
+        }}
       />
 
-      <Modal open={!!modal} onClose={() => setModal(null)} title={modal?.mode === "add" ? "Add User" : "Edit User"}>
+      <Modal open={!!modal} onClose={() => setModal(null)} title={modal?.mode === "add" ? "Add User" : "Edit User"} wide={showPermsField}>
         {modal && (
           <div className="space-y-3">
-            <div><label className="mb-1 block text-xs text-slate-500">Account Name</label><Input defaultValue={modal.user.name} placeholder="e.g. Andy Chan" /></div>
-            <div><label className="mb-1 block text-xs text-slate-500">Login ID</label><Input defaultValue={modal.user.account} placeholder="e.g. andy.chan" /></div>
+            {isTenantAdmin && (
+              <div className="rounded-lg bg-[#1A5CFF]/5 px-3 py-2 text-xs text-[#1A5CFF] ring-1 ring-[#1A5CFF]/15">
+                Creating a user for your tenant: <span className="font-semibold">{myTenant}</span>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="mb-1 block text-xs text-slate-500">Role</label><Select defaultValue={modal.user.role}>{Object.keys(ROLES).map((r) => <option key={r}>{r}</option>)}</Select></div>
-              <div><label className="mb-1 block text-xs text-slate-500">Status</label><Select defaultValue={modal.user.status}><option>Active</option><option>Inactive</option></Select></div>
+              <div><label className="mb-1 block text-xs text-slate-500">Account Name</label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Andy Chan" /></div>
+              <div><label className="mb-1 block text-xs text-slate-500">Login ID</label><Input value={form.account} onChange={(e) => setForm({ ...form, account: e.target.value })} placeholder="e.g. andy.chan" /></div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="mb-1 block text-xs text-slate-500">Role</label>
+                {isTenantAdmin
+                  ? <Input value="Tenant" disabled className="cursor-not-allowed bg-slate-50 text-slate-500" />
+                  : <Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value, tenant: e.target.value === "Tenant" ? form.tenant : "", permissions: e.target.value === "Tenant" ? form.permissions : [] })}>{Object.keys(ROLES).map((r) => <option key={r}>{r}</option>)}</Select>}
+              </div>
+              <div><label className="mb-1 block text-xs text-slate-500">Status</label><Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option>Active</option><option>Inactive</option></Select></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {form.role === "Tenant" && (
+                <div><label className="mb-1 block text-xs text-slate-500">Tenant</label>
+                  {isTenantAdmin
+                    ? <Input value={myTenant} disabled className="cursor-not-allowed bg-slate-50 text-slate-500" />
+                    : <Select value={form.tenant} onChange={(e) => setForm({ ...form, tenant: e.target.value })}>
+                        <option value="">Select tenant…</option>
+                        {TENANTS.map((t) => <option key={t.id} value={t.en}>{t.en} · {t.zh}</option>)}
+                      </Select>}
+                </div>
+              )}
+              <div><label className="mb-1 block text-xs text-slate-500">Active From</label><Input type="date" value={form.activeFrom} onChange={(e) => setForm({ ...form, activeFrom: e.target.value })} />
+                {form.activeFrom > TODAY && <p className="mt-1 text-[11px] text-amber-600">Scheduled — account activates on this date.</p>}
+              </div>
+            </div>
+            {showPermsField && (
+              <div>
+                <label className="mb-1 block text-xs text-slate-500">Permissions</label>
+                <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
+                  {TENANT_PERMISSIONS.map((p) => (
+                    <label key={p} className="flex items-center gap-2 text-sm text-slate-700">
+                      <input type="checkbox" checked={form.permissions.includes(p)} onChange={() => togglePerm(p)} className="accent-[#1A5CFF]" /> {p}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2"><Btn variant="ghost" onClick={() => setModal(null)}>Cancel</Btn><Btn onClick={save}><Save className="h-4 w-4" /> Save</Btn></div>
           </div>
         )}
@@ -556,48 +732,166 @@ function UserManagement({ toast }) {
   );
 }
 
-function TenantManagement({ toast }) {
-  const [edit, setEdit] = useState(null);
+const BLANK_TENANT = { en: "", zh: "", email: "", phone: "", floors: [], whitelist: 30, spaceLimit: 20, used: 0, status: "Active", activeFrom: TODAY, activeTo: "2026-12-31", logo: null, whitelistPlates: [], blacklistPlates: [] };
+
+function TenantManagement({ toast, tenants, setTenants }) {
+  const [modal, setModal] = useState(null); // { mode, id }
+  const [form, setForm] = useState(BLANK_TENANT);
+  const [wlInput, setWlInput] = useState("");
+  const [blInput, setBlInput] = useState("");
+
+  const openAdd = () => { setForm({ ...BLANK_TENANT, whitelistPlates: [], blacklistPlates: [] }); setWlInput(""); setBlInput(""); setModal({ mode: "add" }); };
+  const openEdit = (t) => { setForm({ ...t, whitelistPlates: t.whitelistPlates || [], blacklistPlates: t.blacklistPlates || [] }); setWlInput(""); setBlInput(""); setModal({ mode: "edit", id: t.id }); };
+
+  const addPlate = (kind) => {
+    const raw = (kind === "wl" ? wlInput : blInput).trim().toUpperCase();
+    if (!raw) return;
+    const key = kind === "wl" ? "whitelistPlates" : "blacklistPlates";
+    if (form[key].includes(raw)) { toast("Plate already in list"); return; }
+    if (kind === "wl" && form.whitelistPlates.length >= form.whitelist) { toast(`Whitelist limit reached (max ${form.whitelist})`); return; }
+    setForm((s) => ({ ...s, [key]: [...s[key], raw] }));
+    kind === "wl" ? setWlInput("") : setBlInput("");
+  };
+  const removePlate = (kind, plate) => {
+    const key = kind === "wl" ? "whitelistPlates" : "blacklistPlates";
+    setForm((s) => ({ ...s, [key]: s[key].filter((p) => p !== plate) }));
+  };
+
+  const toggleFloor = (f) => setForm((s) => ({ ...s, floors: s.floors.includes(f) ? s.floors.filter((x) => x !== f) : [...s.floors, f].sort((a, b) => +a.slice(1) - +b.slice(1)) }));
+
+  const onLogo = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setForm((s) => ({ ...s, logo: reader.result }));
+    reader.readAsDataURL(file);
+  };
+
+  const save = () => {
+    if (modal.mode === "add") {
+      const id = Math.max(0, ...tenants.map((t) => t.id)) + 1;
+      const primary = form.floors[0] || "L1";
+      setTenants((ts) => [...ts, { ...form, id, floor: primary, gate: gatesForFloor(primary)[0] }]);
+      toast("Tenant created");
+    } else {
+      setTenants((ts) => ts.map((t) => (t.id === modal.id ? { ...t, ...form, floor: form.floors[0] || t.floor } : t)));
+      toast("Tenant profile updated");
+    }
+    setModal(null);
+  };
+
   return (
     <div>
-      <SectionTitle icon={Building2} title="Tenant Management" desc="Tenant profiles · Whitelist & parking space limits" />
+      <SectionTitle icon={Building2} title="Tenant Management" desc="Tenant profiles · logo · active period · assigned carpark floors">
+        <Btn onClick={openAdd}><Plus className="h-4 w-4" /> Add Tenant</Btn>
+      </SectionTitle>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {TENANTS.map((t) => (
-          <Card key={t.id} className="p-5">
-            <div className="flex items-start gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-[#1A5CFF]/10 ring-1 ring-[#1A5CFF]/20"><Building2 className={`h-7 w-7 ${CN.text}`} /></div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <div><h3 className="truncate font-semibold text-slate-800">{t.en}</h3><p className="text-sm text-slate-500">{t.zh}</p></div>
-                  <Btn variant="outline" onClick={() => setEdit(t)}><Pencil className="h-3.5 w-3.5" /> Edit</Btn>
+        {tenants.map((t) => {
+          const active = isTenantActive(t);
+          return (
+            <Card key={t.id} className="p-5">
+              <div className="flex items-start gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#1A5CFF]/10 ring-1 ring-[#1A5CFF]/20">
+                  {t.logo ? <img src={t.logo} alt={t.en} className="h-full w-full object-cover" /> : <Building2 className={`h-7 w-7 ${CN.text}`} />}
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
-                  <div className="text-slate-400">Email</div><div className="truncate text-slate-600">{t.email}</div>
-                  <div className="text-slate-400">Phone</div><div className="text-slate-600">{t.phone}</div>
-                  <div className="text-slate-400">Floor / Gate</div><div className="text-slate-600">{t.floor} · {t.gate}</div>
-                </div>
-                <div className="mt-3 flex gap-2">
-                  <Badge color="blue">Whitelist Max {t.whitelist}</Badge>
-                  <Badge color="emerald">Space Max {t.spaceLimit}</Badge>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div><h3 className="truncate font-semibold text-slate-800">{t.en}</h3><p className="text-sm text-slate-500">{t.zh}</p></div>
+                    <Btn variant="outline" onClick={() => openEdit(t)}><Pencil className="h-3.5 w-3.5" /> Edit</Btn>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                    <div className="text-slate-400">Email</div><div className="truncate text-slate-600">{t.email}</div>
+                    <div className="text-slate-400">Phone</div><div className="text-slate-600">{t.phone}</div>
+                    <div className="text-slate-400">Carpark Floors</div><div className="text-slate-600">{(t.floors || []).join(", ") || "—"}</div>
+                    <div className="text-slate-400">Active Period</div><div className="text-slate-600">{t.activeFrom} → {t.activeTo}</div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge color={active ? "emerald" : "red"}>{active ? "Active" : t.status === "Inactive" ? "Inactive" : "Expired"}</Badge>
+                    <Badge color="emerald">Whitelist {(t.whitelistPlates || []).length}/{t.whitelist}</Badge>
+                    <Badge color="red">Blacklist {(t.blacklistPlates || []).length}</Badge>
+                    <Badge color="violet">Space Max {t.spaceLimit}</Badge>
+                  </div>
+                  {!active && <p className="mt-2 text-xs text-red-500">Inactive/expired — users of this tenant cannot sign in.</p>}
                 </div>
               </div>
-            </div>
-          </Card>
-        ))}
+            </Card>
+          );
+        })}
       </div>
 
-      <Modal open={!!edit} onClose={() => setEdit(null)} title="Edit Tenant" wide>
-        {edit && (
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-xs text-slate-500">Tenant Name (Eng)</label><Input defaultValue={edit.en} /></div>
-            <div><label className="mb-1 block text-xs text-slate-500">Tenant Name (Chi)</label><Input defaultValue={edit.zh} /></div>
-            <div><label className="mb-1 block text-xs text-slate-500">Email</label><Input defaultValue={edit.email} /></div>
-            <div><label className="mb-1 block text-xs text-slate-500">Phone</label><Input defaultValue={edit.phone} /></div>
-            <div><label className="mb-1 block text-xs text-slate-500">Floor</label><Select defaultValue={edit.floor}>{FLOORS.map((f) => <option key={f}>{f}</option>)}</Select></div>
-            <div><label className="mb-1 block text-xs text-slate-500">Gate Number</label><Select defaultValue={edit.gate}>{gatesForFloor(edit.floor).map((g) => <option key={g}>{g}</option>)}</Select></div>
-            <div><label className="mb-1 block text-xs text-slate-500">Whitelist Limit</label><Input type="number" defaultValue={edit.whitelist} /></div>
-            <div><label className="mb-1 block text-xs text-slate-500">Parking Space Limit</label><Input type="number" defaultValue={edit.spaceLimit} /></div>
-            <div className="col-span-2 flex justify-end gap-2 pt-2"><Btn variant="ghost" onClick={() => setEdit(null)}>Cancel</Btn><Btn onClick={() => { toast("Tenant profile updated"); setEdit(null); }}><Save className="h-4 w-4" /> Save Changes</Btn></div>
+      <Modal open={!!modal} onClose={() => setModal(null)} title={modal?.mode === "add" ? "Add Tenant" : "Edit Tenant"} wide>
+        {modal && (
+          <div className="space-y-3">
+            {/* Logo */}
+            <div className="flex items-center gap-4">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#1A5CFF]/10 ring-1 ring-[#1A5CFF]/20">
+                {form.logo ? <img src={form.logo} alt="logo" className="h-full w-full object-cover" /> : <Building2 className={`h-8 w-8 ${CN.text}`} />}
+              </div>
+              <div className="flex gap-2">
+                <label className="cursor-pointer rounded-lg px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-50">
+                  Upload Logo<input type="file" accept="image/*" onChange={onLogo} className="hidden" />
+                </label>
+                {form.logo && <Btn variant="ghost" onClick={() => setForm({ ...form, logo: null })}>Remove</Btn>}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="mb-1 block text-xs text-slate-500">Tenant Name (Eng)</label><Input value={form.en} onChange={(e) => setForm({ ...form, en: e.target.value })} placeholder="e.g. Cainiao Logistics HK" /></div>
+              <div><label className="mb-1 block text-xs text-slate-500">Tenant Name (Chi)</label><Input value={form.zh} onChange={(e) => setForm({ ...form, zh: e.target.value })} placeholder="例如 菜鳥物流香港" /></div>
+              <div><label className="mb-1 block text-xs text-slate-500">Email</label><Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
+              <div><label className="mb-1 block text-xs text-slate-500">Phone</label><Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
+              <div><label className="mb-1 block text-xs text-slate-500">Whitelist Limit</label><Input type="number" value={form.whitelist} onChange={(e) => setForm({ ...form, whitelist: +e.target.value })} /></div>
+              <div><label className="mb-1 block text-xs text-slate-500">Parking Space Limit</label><Input type="number" value={form.spaceLimit} onChange={(e) => setForm({ ...form, spaceLimit: +e.target.value })} /></div>
+              <div><label className="mb-1 block text-xs text-slate-500">Status</label><Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option>Active</option><option>Inactive</option></Select></div>
+              <div></div>
+              <div><label className="mb-1 block text-xs text-slate-500">Active From</label><Input type="date" value={form.activeFrom} onChange={(e) => setForm({ ...form, activeFrom: e.target.value })} /></div>
+              <div><label className="mb-1 block text-xs text-slate-500">Active To</label><Input type="date" value={form.activeTo} onChange={(e) => setForm({ ...form, activeTo: e.target.value })} /></div>
+            </div>
+
+            {/* Carpark floors — floors only, no gate */}
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Assigned Carpark Floors (no gate needed)</label>
+              <div className="grid grid-cols-6 gap-2 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
+                {FLOORS.map((f) => {
+                  const on = form.floors.includes(f);
+                  return (
+                    <button key={f} type="button" onClick={() => toggleFloor(f)} className={`rounded-lg py-1.5 text-sm font-medium ring-1 transition ${on ? "bg-[#1A5CFF] text-white ring-[#1A5CFF]" : "bg-white text-slate-600 ring-slate-300 hover:bg-slate-100"}`}>{f}</button>
+                  );
+                })}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">Selected: {form.floors.join(", ") || "none"}</p>
+            </div>
+
+            {form.activeTo && form.activeTo < TODAY && <p className="text-xs text-red-500">Active period already expired — this tenant's users will be blocked from signing in.</p>}
+
+            {/* Whitelist / Blacklist plates */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {[
+                { kind: "wl", key: "whitelistPlates", label: "Whitelist Plates", color: "emerald", val: wlInput, setVal: setWlInput, hint: `${form.whitelistPlates.length} / ${form.whitelist}` },
+                { kind: "bl", key: "blacklistPlates", label: "Blacklist Plates", color: "red", val: blInput, setVal: setBlInput, hint: `${form.blacklistPlates.length}` },
+              ].map((c) => (
+                <div key={c.kind} className="rounded-lg ring-1 ring-slate-200">
+                  <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+                    <span className="text-xs font-medium text-slate-600">{c.label}</span>
+                    <Badge color={c.color}>{c.hint}</Badge>
+                  </div>
+                  <div className="flex gap-2 p-3">
+                    <Input value={c.val} onChange={(e) => c.setVal(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addPlate(c.kind); } }} placeholder="e.g. RA1234" className="font-mono uppercase" />
+                    <Btn variant="outline" onClick={() => addPlate(c.kind)}><Plus className="h-3.5 w-3.5" /> Add</Btn>
+                  </div>
+                  <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto px-3 pb-3">
+                    {form[c.key].length === 0 && <span className="text-xs text-slate-400">No plates yet.</span>}
+                    {form[c.key].map((p) => (
+                      <span key={p} className={`inline-flex items-center gap-1 rounded-md px-2 py-1 font-mono text-xs ring-1 ${ACCENT[c.color]}`}>
+                        {p}<button onClick={() => removePlate(c.kind, p)} className="hover:opacity-60"><X className="h-3 w-3" /></button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1"><Btn variant="ghost" onClick={() => setModal(null)}>Cancel</Btn><Btn onClick={save}><Save className="h-4 w-4" /> {modal.mode === "add" ? "Create Tenant" : "Save Changes"}</Btn></div>
           </div>
         )}
       </Modal>
@@ -605,13 +899,18 @@ function TenantManagement({ toast }) {
   );
 }
 
-function VehicleManagement({ toast, role }) {
+function VehicleManagement({ toast, role, gateEvents = [], addGateEvent }) {
   const [cat, setCat] = useState("All");
+  const [manualRec, setManualRec] = useState(null); // record for the Manual Gate Open modal
   const [showDeleted, setShowDeleted] = useState(false);
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [vehicles, setVehicles] = useState(VEHICLES);
+  const [addModal, setAddModal] = useState(false);
+  const [linkView, setLinkView] = useState(null); // vehicle whose correction linkage is shown
+  const BLANK_ADD = { lpn: "", tenant: TENANTS[0].en, category: "Whitelist", floor: "L1", isCorrection: false, origPlate: "", linkedEventId: "", reason: "ANPR mis-read" };
+  const [addForm, setAddForm] = useState(BLANK_ADD);
   const readOnly = role === "Tenant"; // Tenant: limited edit within whitelist limit (mock)
   const catColor = { Whitelist: "emerald", "Monthly Parking": "blue", Temp: "amber", Blacklist: "red", BMO: "violet" };
 
@@ -629,6 +928,24 @@ function VehicleManagement({ toast, role }) {
   });
   const clearFilters = () => { setCat("All"); setSearch(""); setDateFrom(""); setDateTo(""); };
 
+  const stampNow = () => `${TODAY} 09:42 · ${(authUserName())}`;
+  function authUserName() { return role === "Tenant" ? "tenant.user" : "bmo.user"; }
+  const saveAdd = () => {
+    if (!addForm.lpn.trim()) { toast("Enter the corrected LPN"); return; }
+    const id = Math.max(0, ...vehicles.map((v) => v.id)) + 1;
+    const lpn = addForm.lpn.trim().toUpperCase();
+    const linkedEv = gateEvents.find((e) => e.id === addForm.linkedEventId);
+    setVehicles((vs) => [...vs, {
+      id, lpn, tenant: addForm.tenant, category: addForm.category, gate: gatesForFloor(addForm.floor)[0], floor: addForm.floor,
+      from: TODAY, to: "2026-12-31", priority: 1, status: "Active", createdAt: `${TODAY} 09:42`, modifiedAt: `${TODAY} 09:42`, deletedAt: null,
+      correctedFrom: addForm.isCorrection && addForm.origPlate.trim()
+        ? { plate: addForm.origPlate.trim().toUpperCase(), ref: linkedEv ? gateEventLabel(linkedEv) : "Manual Gate Open (unspecified)", eventId: addForm.linkedEventId || null, reason: addForm.reason, at: stampNow() }
+        : null,
+    }]);
+    toast(addForm.isCorrection ? "Corrected record added & linked to mis-read record" : "Vehicle added");
+    setAddModal(false); setAddForm(BLANK_ADD);
+  };
+
   const stamp = () => new Date("2026-06-19T09:42:00").toLocaleString("en-GB").replace(",", "");
   const softDelete = (id) => {
     setVehicles((vs) => vs.map((v) => (v.id === id ? { ...v, status: "Deleted", deletedAt: `${stamp()} · ${role.toLowerCase()}.user` } : v)));
@@ -643,7 +960,7 @@ function VehicleManagement({ toast, role }) {
     <div>
       <SectionTitle icon={Car} title="Vehicle Management" desc="Whitelist · Monthly · Temp · Blacklist · checked against tenant whitelist limit">
         <label className="flex items-center gap-1.5 text-xs text-slate-500"><input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} className="accent-[#1A5CFF]" /> Show deleted</label>
-        <Btn onClick={() => toast("Add vehicle (checked vs tenant whitelist limit)")}><Plus className="h-4 w-4" /> Add Vehicle</Btn>
+        <Btn onClick={() => { setAddForm(BLANK_ADD); setAddModal(true); }}><Plus className="h-4 w-4" /> Add Vehicle</Btn>
       </SectionTitle>
       <DataTable
         columns={["LPN", "Category", "Tenant", "Gate", "Floor", "Activation Period", "Priority", "Status", "Audit (DB)", ""]}
@@ -668,7 +985,14 @@ function VehicleManagement({ toast, role }) {
           const deleted = v.status === "Deleted";
           return (
             <tr key={v.id} className={`border-b border-slate-100 hover:bg-slate-50 ${deleted ? "opacity-60" : ""}`}>
-              <td className="px-4 py-3 font-mono font-semibold text-slate-800">{v.lpn}</td>
+              <td className="px-4 py-3">
+                <div className="font-mono font-semibold text-slate-800">{v.lpn}</div>
+                {v.correctedFrom && (
+                  <button onClick={() => setLinkView(v)} className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-[#1A5CFF] hover:underline">
+                    <Link2 className="h-3 w-3" /> from {v.correctedFrom.plate}
+                  </button>
+                )}
+              </td>
               <td className="px-4 py-3"><Badge color={catColor[v.category]}>{v.category}</Badge></td>
               <td className="px-4 py-3 text-slate-600">{v.tenant}</td>
               <td className="px-4 py-3 text-slate-500">{v.gate}</td>
@@ -683,6 +1007,7 @@ function VehicleManagement({ toast, role }) {
               </td>
               <td className="px-4 py-3 text-right">
                 <div className="flex justify-end gap-1.5">
+                  {!deleted && v.gate !== "—" && <Btn variant="outline" onClick={() => setManualRec({ floor: v.floor, gate: v.gate, lpn: v.lpn, vehicleId: v.id })} title={`Manual gate open for ${v.lpn}`}><DoorOpen className="h-3.5 w-3.5" /></Btn>}
                   <Btn variant="outline" onClick={() => toast(readOnly ? "Tenant edit (within limit) saved" : "Vehicle updated")}><Pencil className="h-3.5 w-3.5" /></Btn>
                   {deleted
                     ? <Btn variant="ghost" onClick={() => restore(v.id)} title="Restore"><RotateCcw className="h-3.5 w-3.5" /></Btn>
@@ -694,11 +1019,115 @@ function VehicleManagement({ toast, role }) {
         }}
       />
       <p className="mt-3 text-xs text-slate-400">Soft-delete: records are marked inactive and retained in DB with Create / Modify / Delete timestamps for audit. Single tenant can span multiple floors with priority ordering.</p>
+
+      {/* Manual Gate Open — general (pick gate) or tied to a specific vehicle row */}
+      <ManualGateModal open={!!manualRec} record={manualRec} onClose={() => setManualRec(null)} onConfirm={({ reason, remark, photo, time, floor, gate }) => {
+        const knownPlate = manualRec?.lpn && manualRec.lpn !== "(manual)";
+        addGateEvent?.({ time: time || `${TODAY} 09:42`, floor, gate, plate: knownPlate ? manualRec.lpn : "(unread)", reason, vehicleId: manualRec?.vehicleId || null });
+        toast(knownPlate ? `Gate opened for ${manualRec.lpn} · linked to its record` : `${floor} · ${gate} opened · logged for vehicle linkage`);
+        setManualRec(null);
+      }} />
+
+      {/* Add Vehicle / Correction modal */}
+      <Modal open={addModal} onClose={() => setAddModal(false)} title="Add Vehicle" wide>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="mb-1 block text-xs text-slate-500">Corrected LPN</label><Input value={addForm.lpn} onChange={(e) => setAddForm({ ...addForm, lpn: e.target.value })} placeholder="e.g. KL2088" className="font-mono uppercase" /></div>
+            <div><label className="mb-1 block text-xs text-slate-500">Tenant</label><Select value={addForm.tenant} onChange={(e) => setAddForm({ ...addForm, tenant: e.target.value })}>{TENANTS.map((t) => <option key={t.id} value={t.en}>{t.en}</option>)}</Select></div>
+            <div><label className="mb-1 block text-xs text-slate-500">Category</label><Select value={addForm.category} onChange={(e) => setAddForm({ ...addForm, category: e.target.value })}>{VEHICLE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</Select></div>
+            <div><label className="mb-1 block text-xs text-slate-500">Floor</label><Select value={addForm.floor} onChange={(e) => setAddForm({ ...addForm, floor: e.target.value })}>{FLOORS.map((f) => <option key={f}>{f}</option>)}</Select></div>
+          </div>
+
+          <label className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
+            <input type="checkbox" checked={addForm.isCorrection} onChange={(e) => setAddForm({ ...addForm, isCorrection: e.target.checked })} className="accent-[#1A5CFF]" />
+            This corrects a mis-read ANPR record (link for audit)
+          </label>
+
+          {addForm.isCorrection && (
+            <div className="space-y-3 rounded-lg p-3 ring-1 ring-[#1A5CFF]/20">
+              <p className="text-xs text-slate-500">After the guard manually opened the gate for a mis-read plate and the vehicle has left, add the corrected record here and link it to the original event.</p>
+              <div>
+                <label className="mb-1 block text-xs text-slate-500">Linked Manual Gate Open event</label>
+                <Select value={addForm.linkedEventId} onChange={(e) => {
+                  const ev = gateEvents.find((x) => x.id === e.target.value);
+                  setAddForm({ ...addForm, linkedEventId: e.target.value, origPlate: ev && ev.plate && !ev.plate.startsWith("(") ? ev.plate : addForm.origPlate, reason: ev?.reason || addForm.reason });
+                }}>
+                  <option value="">Select a gate-open event…</option>
+                  {gateEvents.map((ev) => <option key={ev.id} value={ev.id}>{gateEventLabel(ev)}</option>)}
+                </Select>
+                <p className="mt-1 text-[11px] text-slate-400">From CCTV / In-Out manual gate opens. Selecting one auto-fills the mis-read plate &amp; reason.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="mb-1 block text-xs text-slate-500">Original (mis-read) LPN</label><Input value={addForm.origPlate} onChange={(e) => setAddForm({ ...addForm, origPlate: e.target.value })} placeholder="e.g. KL2O88" className="font-mono uppercase" /></div>
+                <div><label className="mb-1 block text-xs text-slate-500">Reason</label><Select value={addForm.reason} onChange={(e) => setAddForm({ ...addForm, reason: e.target.value })}><option>ANPR mis-read</option><option>Plate obscured / dirty</option><option>No plate detected</option><option>Others</option></Select></div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1"><Btn variant="ghost" onClick={() => setAddModal(false)}>Cancel</Btn><Btn onClick={saveAdd}><Save className="h-4 w-4" /> {addForm.isCorrection ? "Add & Link" : "Add Vehicle"}</Btn></div>
+        </div>
+      </Modal>
+
+      {/* Linkage audit view */}
+      <Modal open={!!linkView} onClose={() => setLinkView(null)} title="Record Linkage — Audit">
+        {linkView && (
+          <div className="space-y-3">
+            <div className="rounded-lg p-3 ring-1 ring-red-200 bg-red-50">
+              <div className="text-xs font-medium text-red-700">Original — ANPR mis-read</div>
+              <div className="mt-1 font-mono text-lg font-bold text-red-700">{linkView.correctedFrom.plate}</div>
+              <div className="text-xs text-red-600/80">{linkView.correctedFrom.ref}</div>
+              <div className="text-xs text-red-600/80">Reason: {linkView.correctedFrom.reason}</div>
+            </div>
+            <div className="flex items-center justify-center text-slate-400"><CornerDownRight className="h-5 w-5" /></div>
+            <div className="rounded-lg p-3 ring-1 ring-emerald-200 bg-emerald-50">
+              <div className="text-xs font-medium text-emerald-700">Corrected record</div>
+              <div className="mt-1 font-mono text-lg font-bold text-emerald-700">{linkView.lpn}</div>
+              <div className="text-xs text-emerald-700/80">{linkView.tenant} · {linkView.floor} · {linkView.category}</div>
+              <div className="text-xs text-emerald-700/80">Added: {linkView.correctedFrom.at}</div>
+            </div>
+            <div className="flex justify-end pt-1"><Btn variant="ghost" onClick={() => setLinkView(null)}>Close</Btn></div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
 
 /* ---------------------------- In / Out Records --------------------------- */
+// Generate a realistic gate-camera snapshot as a JPEG data URL (no real camera in
+// the prototype). Used by the Manual Gate Open "Screen Capture" flow.
+function makeSnapshot({ plate, gate, floor, time }) {
+  const c = document.createElement("canvas");
+  c.width = 480; c.height = 270;
+  const x = c.getContext("2d");
+  x.fillStyle = "#0b1220"; x.fillRect(0, 0, 480, 270);
+  x.fillStyle = "#0f172a"; x.fillRect(40, 60, 400, 150);
+  x.strokeStyle = "#334155"; x.lineWidth = 2; x.strokeRect(40, 60, 400, 150);
+  x.fillStyle = "#ef4444"; x.beginPath(); x.arc(22, 22, 6, 0, 7); x.fill();
+  x.fillStyle = "#ffffff"; x.font = "bold 13px Arial"; x.fillText("REC", 34, 27);
+  x.fillStyle = "#cbd5e1"; x.font = "12px monospace"; x.textAlign = "right"; x.fillText(time, 462, 26);
+  x.fillStyle = "#e2e8f0"; x.font = "bold 46px monospace"; x.textAlign = "center"; x.fillText(plate || "—", 240, 150);
+  x.fillStyle = "#64748b"; x.font = "12px Arial"; x.fillText("ANPR PLATE CAPTURE", 240, 90);
+  x.textAlign = "left"; x.fillStyle = "#94a3b8"; x.font = "13px Arial"; x.fillText(`${floor || ""} · ${gate || ""}`, 14, 256);
+  x.textAlign = "right"; x.fillText("Gate Camera · 1080p", 466, 256);
+  return c.toDataURL("image/jpeg", 0.82);
+}
+
+function PhotoViewModal({ open, onClose, record }) {
+  if (!open || !record) return null;
+  return (
+    <Modal open onClose={onClose} title="Gate Entry Snapshot" wide>
+      <div className="overflow-hidden rounded-xl ring-1 ring-slate-200">
+        <img src={record.photo} alt="snapshot" className="w-full" />
+      </div>
+      <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+        <span>{record.floor} · {record.gate} · {record.entry}</span>
+        <span>Resolution: 1080p · DB Retention: 30 days</span>
+      </div>
+    </Modal>
+  );
+}
+
 function CCTVModal({ open, onClose, lpn }) {
   return (
     <Modal open={open} onClose={onClose} title="CCTV Snapshot" wide>
@@ -721,19 +1150,111 @@ function CCTVModal({ open, onClose, lpn }) {
   );
 }
 
-function ManualGateModal({ open, onClose, onSave }) {
+// Manual Gate Open: a LIVE camera view + "Screen Capture" → the snapshot is
+// attached to the record, then the gate is opened (capture is the evidence).
+function ManualGateModal({ open, record, vehicles, onClose, onConfirm }) {
+  const rec = record || {};
+  const pick = !!rec.pick; // true = operator chooses floor + gate (no fixed context)
   const [reason, setReason] = useState(GATE_REASONS[0]);
   const [remark, setRemark] = useState("");
+  const [photo, setPhoto] = useState(null);
+  const [shotTime, setShotTime] = useState("");
+  const [pf, setPf] = useState("L1");
+  const [pg, setPg] = useState("South Gate");
+  const [linkId, setLinkId] = useState(""); // linked Vehicle Management record (optional)
+  useEffect(() => {
+    if (open) {
+      setReason(GATE_REASONS[0]); setRemark(""); setPhoto(null); setShotTime(""); setLinkId("");
+      const f = rec.floor || "L1"; setPf(f); setPg(rec.gate || gatesForFloor(f)[0]);
+    }
+  }, [open]); // eslint-disable-line
+  if (!open) return null;
+  const floor = pick ? pf : rec.floor;
+  const gate = pick ? pg : rec.gate;
+  const linkedVehicle = (vehicles || []).find((v) => String(v.id) === linkId);
+  const effPlate = linkedVehicle ? linkedVehicle.lpn : rec.lpn;
+
+  const capture = () => {
+    const t = `2026-06-19 09:42:${String(Math.floor(Math.random() * 60)).padStart(2, "0")}`;
+    setShotTime(t);
+    setPhoto(makeSnapshot({ plate: effPlate, gate: gate || "Gate", floor: floor || "", time: t }));
+  };
+
   return (
-    <Modal open={open} onClose={onClose} title="Manual Gate Open — Reason">
+    <Modal open onClose={onClose} title="Manual Gate Open" wide>
       <div className="space-y-3">
+        {vehicles && (
+          <div>
+            <label className="mb-1 block text-xs text-slate-500">Link to vehicle record (optional)</label>
+            <div className="max-h-44 overflow-y-auto rounded-lg ring-1 ring-slate-200">
+              <button type="button" onClick={() => { setLinkId(""); setPhoto(null); }} className={`flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left text-sm hover:bg-slate-50 ${linkId === "" ? "bg-[#1A5CFF]/5" : ""}`}>
+                <span className="text-slate-500">No link — unidentified vehicle</span>
+                {linkId === "" && <CheckCircle2 className="h-4 w-4 text-[#1A5CFF]" />}
+              </button>
+              {vehicles.map((v) => {
+                const on = linkId === String(v.id);
+                return (
+                  <button key={v.id} type="button" onClick={() => { setLinkId(String(v.id)); setPhoto(null); }} className={`flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50 ${on ? "bg-[#1A5CFF]/5" : ""}`}>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm font-semibold text-slate-800">{v.lpn}</span>
+                        <Badge color={v.category === "Blacklist" ? "red" : v.category === "BMO" ? "violet" : "emerald"}>{v.category}</Badge>
+                      </div>
+                      <div className="truncate text-xs text-slate-500">{v.tenant} · {v.floor} · {v.gate}</div>
+                    </div>
+                    <div className="ml-2 shrink-0 text-right">
+                      <div className="text-[11px] text-slate-400">Entry time</div>
+                      <div className="font-mono text-xs text-slate-600">{v.entryTime || "—"}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {linkedVehicle && <p className="mt-1 text-[11px] text-[#1A5CFF]">Linked to {linkedVehicle.lpn} — the gate-open event references this vehicle record.</p>}
+          </div>
+        )}
+        {pick && (
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="mb-1 block text-xs text-slate-500">Floor</label>
+              <Select value={pf} onChange={(e) => { setPf(e.target.value); setPg(gatesForFloor(e.target.value)[0]); setPhoto(null); }}>{FLOORS.map((f) => <option key={f}>{f}</option>)}</Select></div>
+            <div><label className="mb-1 block text-xs text-slate-500">Gate</label>
+              <Select value={pg} onChange={(e) => { setPg(e.target.value); setPhoto(null); }}>{gatesForFloor(pf).map((g) => <option key={g}>{g}</option>)}</Select></div>
+          </div>
+        )}
+        {/* Live view / captured snapshot */}
+        <div className="overflow-hidden rounded-xl ring-1 ring-slate-200">
+          <div className="relative flex aspect-video items-center justify-center bg-slate-900">
+            {photo ? (
+              <img src={photo} alt="snapshot" className="h-full w-full object-cover" />
+            ) : (
+              <>
+                <Video className="h-10 w-10 text-slate-600" />
+                <span className="absolute left-3 top-3 flex items-center gap-1 rounded bg-red-500/90 px-2 py-0.5 text-xs font-semibold text-white"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" /> LIVE</span>
+                <span className="absolute bottom-3 left-3 rounded bg-slate-800/80 px-2 py-0.5 text-xs text-slate-200">{floor} · {gate}</span>
+                <span className="absolute bottom-3 right-3 rounded bg-slate-800/80 px-2 py-0.5 text-xs text-slate-400">1080p</span>
+              </>
+            )}
+            {photo && <span className="absolute right-3 top-3 rounded bg-emerald-500/90 px-2 py-0.5 text-xs font-semibold text-white">CAPTURED</span>}
+          </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-slate-500">{photo ? `Snapshot captured (${shotTime}) — will be attached to the record.` : "Live view · capture a snapshot before opening the gate."}</span>
+          {photo
+            ? <Btn variant="ghost" onClick={() => setPhoto(null)}><Camera className="h-3.5 w-3.5" /> Retake</Btn>
+            : <Btn variant="outline" onClick={capture}><Camera className="h-4 w-4" /> Screen Capture</Btn>}
+        </div>
+
         <div><label className="mb-1 block text-xs text-slate-500">Reason</label>
           <Select value={reason} onChange={(e) => setReason(e.target.value)}>{GATE_REASONS.map((r) => <option key={r}>{r}</option>)}</Select>
         </div>
         <div><label className="mb-1 block text-xs text-slate-500">Remark</label>
-          <textarea value={remark} onChange={(e) => setRemark(e.target.value)} rows={3} placeholder="Optional remark…" className="w-full rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-300 focus:outline-none focus:ring-2 focus:ring-[#1A5CFF]/60" />
+          <textarea value={remark} onChange={(e) => setRemark(e.target.value)} rows={2} placeholder="Optional remark…" className="w-full rounded-lg bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-slate-300 focus:outline-none focus:ring-2 focus:ring-[#1A5CFF]/60" />
         </div>
-        <div className="flex justify-end gap-2 pt-1"><Btn variant="ghost" onClick={onClose}>Cancel</Btn><Btn onClick={() => onSave(reason)}><DoorOpen className="h-4 w-4" /> Open Gate</Btn></div>
+        {!photo && <p className="text-[11px] text-amber-600">Capture a snapshot first — it is recorded as evidence for the manual open.</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn onClick={() => onConfirm({ reason, remark, photo, time: shotTime, floor, gate, linkedVehicleId: linkedVehicle?.id || null, plate: effPlate })} className={!photo ? "pointer-events-none opacity-50" : ""}><DoorOpen className="h-4 w-4" /> Open Gate</Btn>
+        </div>
       </div>
     </Modal>
   );
@@ -818,8 +1339,18 @@ function DataTable({ columns, rows, searchKeys = [], sortKeys, renderRow, filter
   );
 }
 
-function RecordTable({ kind, toast }) {
-  const [rows, setRows] = useState(() => genRecords(kind));
+function RecordTable({ kind, toast, addGateEvent }) {
+  const [rows, setRows] = useState(() => {
+    const base = genRecords(kind);
+    if (kind !== "manual") return base;
+    // Existing manual-open records already carry a captured snapshot + reason.
+    return base.map((r, i) => ({
+      ...r,
+      manualReason: GATE_REASONS[i % GATE_REASONS.length],
+      photo: makeSnapshot({ plate: r.lpn, gate: r.gate, floor: r.floor, time: r.entry }),
+    }));
+  });
+  const [photoView, setPhotoView] = useState(null);
   const [floor, setFloor] = useState("All");
   const [gate, setGate] = useState("All");
   const [tenant, setTenant] = useState("All");
@@ -907,7 +1438,12 @@ function RecordTable({ kind, toast }) {
                   ? (<>
                       <td className="px-4 py-2.5 text-slate-500">{r.floor}</td>
                       <td className="px-4 py-2.5 text-slate-500">{r.entry}</td>
-                      <td className="px-4 py-2.5"><Badge color="amber">VIP / Delivery</Badge></td>
+                      <td className="px-4 py-2.5"><Badge color="amber">{r.manualReason || "Others"}</Badge></td>
+                      <td className="px-4 py-2.5">
+                        {r.photo
+                          ? <button onClick={() => setPhotoView(r)} title="View capture"><img src={r.photo} alt="capture" className="h-9 w-14 rounded object-cover ring-1 ring-slate-200 hover:ring-[#1A5CFF]" /></button>
+                          : <span className="text-xs text-slate-300">—</span>}
+                      </td>
                     </>)
                   : (<>
                       <td className="px-4 py-2.5 text-slate-500">{r.entry}</td>
@@ -917,8 +1453,8 @@ function RecordTable({ kind, toast }) {
                     </>)}
                 <td className="px-4 py-2.5">
                   <div className="flex items-center justify-end gap-1.5">
-                    <Btn variant="outline" onClick={() => setManual(r.id)} title="Manual Gate Open Reason"><DoorOpen className="h-3.5 w-3.5" /></Btn>
-                    <Btn variant="outline" onClick={() => setCctv(r.lpn)} title="CCTV Photo"><Camera className="h-3.5 w-3.5" /></Btn>
+                    <Btn variant="outline" onClick={() => setManual(r)} title="Manual Gate Open"><DoorOpen className="h-3.5 w-3.5" /></Btn>
+                    {kind !== "manual" && <Btn variant="outline" onClick={() => setCctv(r.lpn)} title="CCTV Photo"><Camera className="h-3.5 w-3.5" /></Btn>}
                     <Btn onClick={() => toast(`Record ${r.lpn} saved`)} title="Save"><Save className="h-3.5 w-3.5" /></Btn>
                   </div>
                 </td>
@@ -933,10 +1469,14 @@ function RecordTable({ kind, toast }) {
       </Card>
 
       <CCTVModal open={!!cctv} lpn={cctv} onClose={() => setCctv(null)} />
-      <ManualGateModal open={!!manual} onClose={() => setManual(null)} onSave={(reason) => {
-        // HARDWARE: trigger barrier relay + write to audit trail.
-        api.openGate(floor, gate, reason, "");
-        toast(`Gate opened · ${reason}`); setManual(null);
+      <PhotoViewModal open={!!photoView} record={photoView} onClose={() => setPhotoView(null)} />
+      <ManualGateModal open={!!manual} record={manual} onClose={() => setManual(null)} onConfirm={({ reason, remark, photo, time }) => {
+        // HARDWARE: trigger barrier relay + write to audit trail. Snapshot is attached to the record.
+        api.openGate(manual?.floor, manual?.gate, reason, remark);
+        if (manual) setRows((rs) => rs.map((r) => (r.id === manual.id ? { ...r, photo: photo || r.photo, manualReason: reason, entry: time || r.entry } : r)));
+        // Log the event with the ANPR-read plate so Vehicle Management can link a correction.
+        addGateEvent?.({ time: time || manual?.entry, floor: manual?.floor, gate: manual?.gate, plate: manual?.lpn, reason });
+        toast(`Gate opened · ${reason} · snapshot recorded`); setManual(null);
       }} />
     </div>
   );
@@ -1017,7 +1557,7 @@ function TruckTripRecord({ toast }) {
   );
 }
 
-function InOutRecords({ toast }) {
+function InOutRecords({ toast, addGateEvent }) {
   const tabs = [
     { id: "in", label: "In Record" },
     { id: "out", label: "Out Record" },
@@ -1036,7 +1576,7 @@ function InOutRecords({ toast }) {
       {tab === "truck" ? (
         <TruckTripRecord toast={toast} />
       ) : (
-        <RecordTable kind={tab} toast={toast} />
+        <RecordTable kind={tab} toast={toast} addGateEvent={addGateEvent} />
       )}
     </div>
   );
@@ -1044,23 +1584,55 @@ function InOutRecords({ toast }) {
 
 /* --------------------------- Carpark & POS ------------------------------- */
 function PosManagement({ toast }) {
-  const [tab, setTab] = useState("config");
+  const [tab, setTab] = useState("pos");
   const [pFloor, setPFloor] = useState("All");
   const [pTenant, setPTenant] = useState("All");
   const [pLpn, setPLpn] = useState("");
   const [pDate, setPDate] = useState("2026-06-19");
-  const posRows = POS_RECORDS.filter((r) =>
+  const [records, setRecords] = useState(POS_RECORDS);
+  const [corr, setCorr] = useState(null);   // record being corrected
+  const [cform, setCform] = useState({ plate: "", reason: "ANPR mis-read", ref: "" });
+  const [linkView, setLinkView] = useState(null);
+
+  const posRows = records.filter((r) =>
     (pFloor === "All" || r.floor === pFloor) &&
     (pTenant === "All" || r.tenant === pTenant) &&
     (!pLpn || r.lpn.toLowerCase().includes(pLpn.toLowerCase())) &&
     (!pDate || r.entry.startsWith(pDate))
   );
-  const printReceipt = (r) => { toast("Generating PDF receipt…"); exportReceiptPDF(r).catch(() => toast("PDF export failed")); };
+  const printReceipt = (r) => { toast("Opening print dialog…"); printReceiptDoc(r); };
+
+  const openCorrect = (r) => { setCform({ plate: "", reason: "ANPR mis-read", ref: "" }); setCorr(r); };
+  const saveCorrect = () => {
+    const newPlate = cform.plate.trim().toUpperCase();
+    if (!newPlate) { toast("Enter the corrected plate"); return; }
+    if (!corr.paid) {
+      // Not settled yet — amend the plate in place (logged amendment), receipt prints corrected.
+      setRecords((rs) => rs.map((r) => (r.id === corr.id ? { ...r, lpn: newPlate, amendNote: `Plate amended from ${corr.lpn} (${cform.reason})` } : r)));
+      toast("Plate amended before settlement");
+    } else {
+      // Already settled — keep original (mark Corrected), issue a linked amended receipt.
+      const id = Math.max(...records.map((r) => r.id)) + 1;
+      const newReceipt = `CN-${100200 + id}`;
+      setRecords((rs) => rs.flatMap((r) => {
+        if (r.id !== corr.id) return [r];
+        const corrected = { ...r, status: "Corrected", supersededBy: newReceipt };
+        const amended = {
+          ...r, id, receiptNo: newReceipt, lpn: newPlate, status: "Amended", amends: corr.receiptNo,
+          correctedFrom: { plate: corr.lpn, ref: cform.ref.trim() || `Original receipt ${corr.receiptNo}`, reason: cform.reason, at: `${TODAY} 09:42 · fm.user` },
+        };
+        return [corrected, amended];
+      }));
+      toast("Amended receipt issued & linked to original");
+    }
+    setCorr(null);
+  };
+
   return (
     <div>
       <SectionTitle icon={CreditCard} title="Carpark & POS Management" desc="Configuration · rate tables · payment records" />
       <div className="mb-4 flex gap-6 border-b border-slate-200">
-        {[{ id: "config", label: "Configuration" }, { id: "pos", label: "POS Records" }].map((t) => (
+        {[{ id: "pos", label: "POS Records" }, { id: "config", label: "Configuration" }].map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} className={`-mb-px border-b-2 pb-2.5 text-sm focus:outline-none ${tab === t.id ? "border-[#1A5CFF] font-semibold text-[#1A5CFF]" : "border-transparent text-slate-500 hover:text-slate-700"}`}>{t.label}</button>
         ))}
       </div>
@@ -1097,9 +1669,9 @@ function PosManagement({ toast }) {
       ) : (
         <>
           <DataTable
-            columns={["LPN", "Gate", "Type", "Entry", "Exit", "Floor", "Pay Time", "Method", "Amount", ""]}
+            columns={["Receipt / LPN", "Gate", "Floor", "Pay Time", "Method", "Txn No", "Amount", "Status", ""]}
             rows={posRows}
-            searchKeys={["lpn", "tenant"]}
+            searchKeys={["lpn", "tenant", "receiptNo", "txnNo"]}
             sortKeys={[{ key: "entry", label: "Latest Entry", cmp: (a, b) => b.entry.localeCompare(a.entry) }, { key: "amount", label: "Amount", cmp: (a, b) => b.amount - a.amount }]}
             filterPanel={
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -1109,39 +1681,97 @@ function PosManagement({ toast }) {
                 <Btn variant="outline" className="justify-center" onClick={() => { setPFloor("All"); setPTenant("All"); setPLpn(""); setPDate(""); }}><Filter className="h-4 w-4" /> Clear</Btn>
               </div>
             }
-            renderRow={(r) => (
-              <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50">
-                <td className="px-4 py-2.5 font-mono font-semibold text-slate-800">{r.lpn}</td>
-                <td className="px-4 py-2.5 text-slate-500">{r.gate}</td>
-                <td className="px-4 py-2.5 text-slate-500">{r.vehicleType}</td>
-                <td className="px-4 py-2.5 text-slate-500">{r.entry}</td>
-                <td className="px-4 py-2.5 text-slate-500">{r.exit}</td>
-                <td className="px-4 py-2.5"><Badge color="blue">{r.floor}</Badge></td>
-                <td className="px-4 py-2.5 text-slate-500">{r.payTime}</td>
-                <td className="px-4 py-2.5"><Badge color="emerald">{r.method}</Badge></td>
-                <td className="px-4 py-2.5 font-semibold text-slate-800">${r.amount}</td>
-                <td className="px-4 py-2.5 text-right"><Btn variant="outline" onClick={() => printReceipt(r)} title="Export PDF receipt"><Printer className="h-3.5 w-3.5" /> PDF</Btn></td>
-              </tr>
-            )}
+            renderRow={(r) => {
+              const corrected = r.status === "Corrected";
+              return (
+                <tr key={r.id} className={`border-b border-slate-100 hover:bg-slate-50 ${corrected ? "opacity-60" : ""}`}>
+                  <td className="px-4 py-2.5">
+                    <div className="text-[11px] text-slate-400">{r.receiptNo}</div>
+                    <div className={`font-mono font-semibold ${corrected ? "text-slate-400 line-through" : "text-slate-800"}`}>{r.lpn}</div>
+                    {r.correctedFrom && (
+                      <button onClick={() => setLinkView(r)} className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-[#1A5CFF] hover:underline"><Link2 className="h-3 w-3" /> from {r.correctedFrom.plate}</button>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-500">{r.gate}</td>
+                  <td className="px-4 py-2.5"><Badge color="blue">{r.floor}</Badge></td>
+                  <td className="px-4 py-2.5 text-slate-500">{r.paid ? r.payTime : <span className="text-amber-600">Pending</span>}</td>
+                  <td className="px-4 py-2.5">{r.paid ? <Badge color="emerald">{r.method}</Badge> : <span className="text-slate-400">—</span>}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{r.txnNo}</td>
+                  <td className="px-4 py-2.5 font-semibold text-slate-800">${r.amount}</td>
+                  <td className="px-4 py-2.5">
+                    {r.status === "Amended" ? <Badge color="blue">Amended</Badge>
+                      : corrected ? <Badge color="red">Corrected</Badge>
+                      : <Badge color={r.paid ? "emerald" : "amber"}>{r.paid ? "Settled" : "Pending"}</Badge>}
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      {!corrected && <Btn variant="outline" onClick={() => openCorrect(r)} title="Correct plate"><Link2 className="h-3.5 w-3.5" /></Btn>}
+                      <Btn variant="outline" onClick={() => printReceipt(r)} title="Export PDF receipt"><Printer className="h-3.5 w-3.5" /></Btn>
+                    </div>
+                  </td>
+                </tr>
+              );
+            }}
           />
-          <p className="mt-3 text-xs text-slate-400">Payment methods: Octopus · H5 (WeChat / Alipay) · Visa / Master.</p>
+          <p className="mt-3 text-xs text-slate-400">Payment methods: Octopus · WeChat · Alipay · Visa / Master. Settled receipts are immutable — corrections issue a linked amended receipt.</p>
         </>
       )}
+
+      {/* Correct plate modal — dual mode based on settlement status */}
+      <Modal open={!!corr} onClose={() => setCorr(null)} title="Correct Plate">
+        {corr && (
+          <div className="space-y-3">
+            <div className={`rounded-lg px-3 py-2 text-xs ring-1 ${corr.paid ? "bg-amber-50 text-amber-700 ring-amber-200" : "bg-[#1A5CFF]/5 text-[#1A5CFF] ring-[#1A5CFF]/15"}`}>
+              {corr.paid
+                ? <>This receipt <b>{corr.receiptNo}</b> is already settled and cannot be edited. An <b>amended receipt</b> will be issued and linked to this one for audit.</>
+                : <>This transaction <b>{corr.receiptNo}</b> is <b>not yet settled</b> — the plate will be amended in place before payment.</>}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="mb-1 block text-xs text-slate-500">Original (mis-read) LPN</label><Input value={corr.lpn} disabled className="cursor-not-allowed bg-slate-50 font-mono text-slate-500" /></div>
+              <div><label className="mb-1 block text-xs text-slate-500">Corrected LPN</label><Input value={cform.plate} onChange={(e) => setCform({ ...cform, plate: e.target.value })} placeholder="e.g. KL2088" className="font-mono uppercase" /></div>
+            </div>
+            <div><label className="mb-1 block text-xs text-slate-500">Reason</label><Select value={cform.reason} onChange={(e) => setCform({ ...cform, reason: e.target.value })}><option>ANPR mis-read</option><option>Plate obscured / dirty</option><option>No plate detected</option><option>Others</option></Select></div>
+            <div><label className="mb-1 block text-xs text-slate-500">Linked Record (Manual Gate / In-Out / Vehicle correction)</label><Input value={cform.ref} onChange={(e) => setCform({ ...cform, ref: e.target.value })} placeholder="e.g. Manual Gate Open · South Gate · 2026-06-19 08:50" /></div>
+            <div className="flex justify-end gap-2 pt-1"><Btn variant="ghost" onClick={() => setCorr(null)}>Cancel</Btn><Btn onClick={saveCorrect}><Save className="h-4 w-4" /> {corr.paid ? "Issue Amended Receipt" : "Amend Plate"}</Btn></div>
+          </div>
+        )}
+      </Modal>
+
+      {/* POS linkage audit view */}
+      <Modal open={!!linkView} onClose={() => setLinkView(null)} title="Receipt Linkage — Audit">
+        {linkView && (
+          <div className="space-y-3">
+            <div className="rounded-lg bg-red-50 p-3 ring-1 ring-red-200">
+              <div className="text-xs font-medium text-red-700">Original receipt — ANPR mis-read</div>
+              <div className="mt-1 flex items-baseline justify-between"><span className="font-mono text-lg font-bold text-red-700">{linkView.correctedFrom.plate}</span><span className="text-xs text-red-600/80">{linkView.amends}</span></div>
+              <div className="text-xs text-red-600/80">{linkView.correctedFrom.ref} · {linkView.correctedFrom.reason}</div>
+            </div>
+            <div className="flex items-center justify-center text-slate-400"><CornerDownRight className="h-5 w-5" /></div>
+            <div className="rounded-lg bg-emerald-50 p-3 ring-1 ring-emerald-200">
+              <div className="text-xs font-medium text-emerald-700">Amended receipt</div>
+              <div className="mt-1 flex items-baseline justify-between"><span className="font-mono text-lg font-bold text-emerald-700">{linkView.lpn}</span><span className="text-xs text-emerald-700/80">{linkView.receiptNo}</span></div>
+              <div className="text-xs text-emerald-700/80">{linkView.tenant} · {linkView.floor} · ${linkView.amount} · issued {linkView.correctedFrom.at}</div>
+            </div>
+            <div className="flex justify-end gap-2 pt-1"><Btn variant="outline" onClick={() => printReceipt(linkView)}><Printer className="h-3.5 w-3.5" /> Amended PDF</Btn><Btn variant="ghost" onClick={() => setLinkView(null)}>Close</Btn></div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
 
 /* ------------------------------- CCTV Live -------------------------------- */
-function CctvLiveview({ toast }) {
+function CctvLiveview({ toast, addGateEvent }) {
   const [floor, setFloor] = useState("L3");
   const gates = gatesForFloor(floor);
-  const [manual, setManual] = useState(false);
+  const [manualGate, setManualGate] = useState(null); // the specific gate being opened
+
   return (
     <div>
       <SectionTitle icon={Video} title="CCTV Liveview" desc="Gate cameras · 55″ wall display feed">
         <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500">Floor</span>
           <Select value={floor} onChange={(e) => setFloor(e.target.value)} className="w-28">{FLOORS.map((f) => <option key={f}>{f}</option>)}</Select>
-          <Btn variant="ghost" onClick={() => setManual(true)}><DoorOpen className="h-4 w-4" /> Manual Gate Open</Btn>
         </div>
       </SectionTitle>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1153,31 +1783,64 @@ function CctvLiveview({ toast }) {
               <span className="absolute bottom-3 left-3 rounded bg-slate-800/80 px-2 py-0.5 text-xs text-slate-200">{floor} · {g}</span>
               <span className="absolute bottom-3 right-3 rounded bg-slate-800/80 px-2 py-0.5 text-xs text-slate-400">1080p</span>
             </div>
+            {/* Per-gate manual open — each camera controls its own barrier only */}
+            <div className="flex items-center justify-between px-4 py-2.5">
+              <div className="text-sm font-medium text-slate-700">{g}</div>
+              <Btn variant="outline" onClick={() => setManualGate(g)}><DoorOpen className="h-3.5 w-3.5" /> Open this gate</Btn>
+            </div>
           </Card>
         ))}
       </div>
-      <ManualGateModal open={manual} onClose={() => setManual(false)} onSave={(reason) => { toast(`Gate opened · ${reason}`); setManual(false); }} />
+      <p className="mt-3 text-xs text-slate-400">Each camera opens only its own gate. {gates.length > 1 ? `${floor} has ${gates.length} independent gates (${gates.join(" · ")}).` : `${floor} has a single gate (${gates[0]}).`}</p>
+
+      <ManualGateModal open={!!manualGate} record={{ floor, gate: manualGate || "Gate", lpn: "(live)" }}
+        vehicles={VEHICLES.filter((v) => v.status !== "Deleted" && v.gate !== "—").map((v) => ({ ...v, entryTime: `2026-06-19 0${7 + (v.id % 3)}:${String((v.id * 7) % 60).padStart(2, "0")}` }))}
+        onClose={() => setManualGate(null)}
+        onConfirm={({ reason, time, plate, linkedVehicleId }) => {
+          // Log a manual gate-open event, optionally linked to a vehicle record.
+          addGateEvent?.({ time: time || `${TODAY} 09:42`, floor, gate: manualGate, plate: linkedVehicleId ? plate : "(unread)", reason, vehicleId: linkedVehicleId });
+          toast(linkedVehicleId ? `${floor} · ${manualGate} opened · linked to ${plate}` : `${floor} · ${manualGate} opened · ${reason}`);
+          setManualGate(null);
+        }} />
     </div>
   );
 }
 
 /* -------------------------------- Reports -------------------------------- */
-function Reports({ toast }) {
+// money:true reports contain financial figures and are restricted to the BMO role.
+const REPORTS = [
+  { id: "space", title: "Parking Space Management Report", icon: LayoutDashboard, money: false, desc: "Occupancy & space utilisation by floor and tenant, incl. peak periods." },
+  { id: "revenue", title: "Revenue Report", icon: CreditCard, money: true, desc: "Total parking revenue by gate, vehicle type and period." },
+  { id: "vsummary", title: "Vehicle Summary Report", icon: Car, money: false, desc: "Vehicle counts by category — whitelist, monthly, temp, blacklist, BMO." },
+  { id: "tenant", title: "Tenant Profile", icon: Building2, money: false, desc: "Tenant directory: floors, gates, whitelist/space limits and active period." },
+  { id: "grouping", title: "Vehicle Grouping Report", icon: Filter, money: false, desc: "Vehicles grouped by tenant, floor and category for review." },
+  { id: "financial", title: "Payment Status & Financial Report", icon: CreditCard, money: true, desc: "Settled vs pending, payment-method breakdown and financial summary." },
+];
+
+function Reports({ toast, role }) {
+  const visible = REPORTS.filter((r) => !r.money || role === "BMO");
   return (
     <div>
-      <SectionTitle icon={FileBarChart} title="Reports" desc="In/Out & Payment reporting" />
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-        {[
-          { t: "In / Out Report", d: "Daily / monthly entry & exit volume by floor, gate and tenant." },
-          { t: "Payment Report", d: "POS revenue breakdown by method, vehicle type and tenant." },
-        ].map((r) => (
-          <Card key={r.t} className="p-5">
-            <h3 className="font-semibold text-slate-800">{r.t}</h3>
-            <p className="mt-1 text-sm text-slate-500">{r.d}</p>
-            <div className="mt-4 grid grid-cols-2 gap-3">
+      <SectionTitle icon={FileBarChart} title="Reports" desc="Operational & financial reporting" />
+      {role !== "BMO" && (
+        <p className="mb-4 text-xs text-slate-400">Financial reports (Revenue · Payment Status &amp; Financial) are visible to BMO only.</p>
+      )}
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+        {visible.map((r) => (
+          <Card key={r.id} className="flex flex-col p-5">
+            <div className="flex items-start justify-between gap-2">
+              <span className={`rounded-lg p-2 ring-1 ${r.money ? ACCENT.violet : ACCENT.blue}`}><r.icon className="h-5 w-5" /></span>
+              {r.money && <Badge color="violet">BMO only</Badge>}
+            </div>
+            <h3 className="mt-3 font-semibold text-slate-800">{r.title}</h3>
+            <p className="mt-1 flex-1 text-sm text-slate-500">{r.desc}</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
               <Input type="date" defaultValue="2026-06-01" /><Input type="date" defaultValue="2026-06-19" />
             </div>
-            <div className="mt-3 flex gap-2"><Btn onClick={() => toast("Report generated")}><FileBarChart className="h-4 w-4" /> Generate</Btn><Btn variant="ghost" onClick={() => { api.exportReport(r.t, {}); toast("Exported to Excel"); }}>Export</Btn></div>
+            <div className="mt-3 flex gap-2">
+              <Btn onClick={() => toast(`${r.title} generated`)}><FileBarChart className="h-4 w-4" /> Generate</Btn>
+              <Btn variant="ghost" onClick={() => { api.exportReport(r.id, {}); toast("Exported to Excel"); }}>Export</Btn>
+            </div>
           </Card>
         ))}
       </div>
@@ -1255,7 +1918,7 @@ function IconField({ icon: Icon, ...props }) {
   );
 }
 
-function LoginScreen({ accounts, onLogin, onRegister }) {
+function LoginScreen({ accounts, tenants, onLogin, onRegister }) {
   const [mode, setMode] = useState("login"); // login | register
   const [err, setErr] = useState("");
   // login fields
@@ -1269,6 +1932,11 @@ function LoginScreen({ accounts, onLogin, onRegister }) {
     e?.preventDefault();
     const acc = accounts.find((a) => a.login.toLowerCase() === login.trim().toLowerCase());
     if (!acc || acc.password !== pwd) { setErr("Invalid login ID or password."); return; }
+    // Tenant users are blocked when their tenant is inactive or its active period has expired.
+    if (acc.role === "Tenant") {
+      const t = (tenants || []).find((x) => x.en === acc.tenant);
+      if (!isTenantActive(t)) { setErr("Your tenant account is inactive or its active period has expired. Please contact BMO."); return; }
+    }
     setErr(""); onLogin(acc);
   };
 
@@ -1392,6 +2060,8 @@ function SidebarBody({ allowedNav, page, go, role }) {
 
 export default function App() {
   const [accounts, setAccounts] = useState(SEED_ACCOUNTS);
+  const [tenants, setTenants] = useState(TENANTS);
+  const [gateEvents, setGateEvents] = useState(SEED_GATE_EVENTS);
   const [authUser, setAuthUser] = useState(null); // logged-in account or null
   const [role, setRole] = useState("BMO");
   const [page, setPage] = useState("dashboard");
@@ -1408,6 +2078,7 @@ export default function App() {
   const handleLogin = (acc) => { setAuthUser(acc); setRole(acc.role); setPage("dashboard"); };
   const handleRegister = (acc) => { setAccounts((a) => [...a, acc]); };
   const handleLogout = () => { setAuthUser(null); setUserOpen(false); };
+  const addGateEvent = (ev) => setGateEvents((g) => [{ id: `MG-${1001 + g.length}`, by: authUser?.login || "guard", ...ev }, ...g]);
 
   const allowedNav = NAV.filter((n) => MODULE_ACCESS[n.id].includes(role));
 
@@ -1418,7 +2089,7 @@ export default function App() {
 
   // Gate the whole portal behind authentication.
   if (!authUser) {
-    return <LoginScreen accounts={accounts} onLogin={handleLogin} onRegister={handleRegister} />;
+    return <LoginScreen accounts={accounts} tenants={tenants} onLogin={handleLogin} onRegister={handleRegister} />;
   }
 
   const RoleIcon = ROLES[role].icon;
@@ -1428,13 +2099,13 @@ export default function App() {
   const render = () => {
     switch (page) {
       case "dashboard": return <Dashboard />;
-      case "users": return <UserManagement toast={toast} />;
-      case "tenants": return <TenantManagement toast={toast} />;
-      case "vehicles": return <VehicleManagement toast={toast} role={role} />;
-      case "records": return <InOutRecords toast={toast} />;
+      case "users": return <UserManagement toast={toast} role={role} authUser={authUser} />;
+      case "tenants": return <TenantManagement toast={toast} tenants={tenants} setTenants={setTenants} />;
+      case "vehicles": return <VehicleManagement toast={toast} role={role} gateEvents={gateEvents} addGateEvent={addGateEvent} />;
+      case "records": return <InOutRecords toast={toast} addGateEvent={addGateEvent} />;
       case "pos": return <PosManagement toast={toast} />;
-      case "cctv": return <CctvLiveview toast={toast} />;
-      case "reports": return <Reports toast={toast} />;
+      case "cctv": return <CctvLiveview toast={toast} addGateEvent={addGateEvent} />;
+      case "reports": return <Reports toast={toast} role={role} />;
       case "audit": return <AuditLog />;
       case "syslog": return <SystemLog />;
       default: return <Dashboard />;
