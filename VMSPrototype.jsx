@@ -271,22 +271,26 @@ const SEED_ACCOUNTS = [
 
 const VEHICLE_TYPES = ["Private Car", "Van", "Truck"];
 const VEHICLE_CATEGORIES = ["Whitelist", "Monthly Parking", "Temp", "Blacklist", "BMO"];
+// Category options on the Add Vehicle form. Picking "Tenant" reveals a parking
+// sub-type + tenant name; the other options are stored as the category directly.
+const VEHICLE_TOP_CATEGORIES = ["BMO", "Temp", "Tenant", "Whitelist", "Blacklist", "Monthly Parking"];
+const TENANT_PARKING_TYPES = ["Whitelist", "Blacklist", "Monthly Parking"];
 
 // P4: soft-delete + audit — each record carries status & DB audit timestamps.
 const VEHICLES = [
-  { id: 1, lpn: "RA1234", tenant: "Cainiao Logistics HK", category: "Whitelist", gate: "North Gate", floor: "L3", from: "2026-01-01", to: "2026-12-31", priority: 1, status: "Active", createdAt: "2026-01-01 08:00", modifiedAt: "2026-06-10 14:22", deletedAt: null },
-  { id: 2, lpn: "VP8821", tenant: "DHL Express Asia", category: "Monthly Parking", gate: "South Gate", floor: "L4", from: "2026-06-01", to: "2026-06-30", priority: 1, status: "Active", createdAt: "2026-06-01 09:10", modifiedAt: "2026-06-01 09:10", deletedAt: null },
-  { id: 3, lpn: "TM5566", tenant: "SF Express", category: "Whitelist", gate: "North Gate", floor: "L2", from: "2026-03-15", to: "2026-09-15", priority: 2, status: "Active", createdAt: "2026-03-15 11:30", modifiedAt: "2026-05-02 16:05", deletedAt: null },
-  { id: 4, lpn: "GK4099", tenant: "Kerry Logistics", category: "Temp", gate: "South Gate", floor: "L6", from: "2026-06-19", to: "2026-06-19", priority: 1, status: "Deleted", createdAt: "2026-06-19 07:40", modifiedAt: "2026-06-19 07:40", deletedAt: "2026-06-19 07:58 · andy.chan" },
-  { id: 5, lpn: "BX0001", tenant: "—", category: "Blacklist", gate: "—", floor: "—", from: "—", to: "—", priority: 0, status: "Active", createdAt: "2026-02-20 10:00", modifiedAt: "2026-02-20 10:00", deletedAt: null },
-  { id: 6, lpn: "JD7012", tenant: "JD Logistics HK", category: "Whitelist", gate: "South Gate", floor: "L7", from: "2026-01-10", to: "2026-12-31", priority: 1, status: "Active", createdAt: "2026-01-10 13:15", modifiedAt: "2026-04-18 09:44", deletedAt: null, correctedFrom: null },
+  { id: 1, lpn: "RA1234", vehicleType: "Private Car", tenant: "Cainiao Logistics HK", category: "Whitelist", gate: "North Gate", floor: "L3", from: "2026-01-01", to: "2026-12-31", priority: 1, status: "Active", createdAt: "2026-01-01 08:00", modifiedAt: "2026-06-10 14:22", deletedAt: null },
+  { id: 2, lpn: "VP8821", vehicleType: "Van", tenant: "DHL Express Asia", category: "Monthly Parking", gate: "South Gate", floor: "L4", from: "2026-06-01", to: "2026-06-30", priority: 1, status: "Active", createdAt: "2026-06-01 09:10", modifiedAt: "2026-06-01 09:10", deletedAt: null },
+  { id: 3, lpn: "TM5566", vehicleType: "Truck", tenant: "SF Express", category: "Whitelist", gate: "North Gate", floor: "L2", from: "2026-03-15", to: "2026-09-15", priority: 2, status: "Active", createdAt: "2026-03-15 11:30", modifiedAt: "2026-05-02 16:05", deletedAt: null },
+  { id: 4, lpn: "GK4099", vehicleType: "Truck", tenant: "Kerry Logistics", category: "Temp", gate: "South Gate", floor: "L6", from: "2026-06-19", to: "2026-06-19", priority: 1, status: "Deleted", createdAt: "2026-06-19 07:40", modifiedAt: "2026-06-19 07:40", deletedAt: "2026-06-19 07:58 · andy.chan" },
+  { id: 5, lpn: "BX0001", vehicleType: "Private Car", tenant: "—", category: "Blacklist", gate: "—", floor: "—", from: "—", to: "—", priority: 0, status: "Active", createdAt: "2026-02-20 10:00", modifiedAt: "2026-02-20 10:00", deletedAt: null },
+  { id: 6, lpn: "JD7012", vehicleType: "Van", tenant: "JD Logistics HK", category: "Whitelist", gate: "South Gate", floor: "L7", from: "2026-01-10", to: "2026-12-31", priority: 1, status: "Active", createdAt: "2026-01-10 13:15", modifiedAt: "2026-04-18 09:44", deletedAt: null, correctedFrom: null },
   // Example correction: ANPR mis-read "KL2O88" (O vs 0); guard manual-opened the gate,
   // and after the vehicle left, a corrected record was added and linked back for audit.
-  { id: 7, lpn: "KL2088", tenant: "Kerry Logistics", category: "Whitelist", gate: "South Gate", floor: "L6", from: "2026-06-19", to: "2026-12-31", priority: 1, status: "Active", createdAt: "2026-06-19 09:25", modifiedAt: "2026-06-19 09:25", deletedAt: null,
+  { id: 7, lpn: "KL2088", vehicleType: "Truck", tenant: "Kerry Logistics", category: "Whitelist", gate: "South Gate", floor: "L6", from: "2026-06-19", to: "2026-12-31", priority: 1, status: "Active", createdAt: "2026-06-19 09:25", modifiedAt: "2026-06-19 09:25", deletedAt: null,
     correctedFrom: { plate: "KL2O88", ref: "Manual Gate Open · South Gate · L6 · 2026-06-19 08:50", reason: "ANPR mis-read (O↔0)", at: "2026-06-19 09:25 · kaho.wong" } },
 ];
 
-const GATE_REASONS = ["Rubbish Car", "Carpark Full", "VIP", "Delivery", "Others"];
+const GATE_REASONS = ["ANPR Mis-read", "Emergency Vehicle", "VIP", "Delivery / Goods Vehicle", "Refuse Collection", "Visitor (Authorised)", "Barrier Malfunction", "Maintenance / Contractor", "Others"];
 
 // Manual gate-open events — shared across CCTV / In-Out, and referenced by Vehicle
 // Management corrections so the whole audit chain links up.
@@ -648,25 +652,17 @@ function UserManagement({ toast, role, authUser }) {
         <Btn onClick={() => openModal("add", blankUser)}><Plus className="h-4 w-4" /> Add User</Btn>
       </SectionTitle>
       <DataTable
-        columns={["Account Name", "Login", "Role", "Active From", "Status", ""]}
+        columns={["Account Name", "Role", "Tenant Name", "Status", ""]}
         rows={visibleUsers}
         searchKeys={["name", "account", "role", "tenant"]}
-        sortKeys={[{ key: "name", label: "Name", cmp: (a, b) => a.name.localeCompare(b.name) }, { key: "role", label: "Role", cmp: (a, b) => a.role.localeCompare(b.role) }, { key: "activeFrom", label: "Active From", cmp: (a, b) => (a.activeFrom || "").localeCompare(b.activeFrom || "") }]}
+        sortKeys={[{ key: "name", label: "Name", cmp: (a, b) => a.name.localeCompare(b.name) }, { key: "role", label: "Role", cmp: (a, b) => a.role.localeCompare(b.role) }]}
         renderRow={(u) => {
           const st = effStatus(u);
           return (
             <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50">
               <td className="px-4 py-3"><div className="flex items-center gap-2"><CircleUser className="h-7 w-7 text-slate-300" /><span className="font-medium text-slate-800">{u.name}</span></div></td>
-              <td className="px-4 py-3 text-slate-500">{u.account}</td>
-              <td className="px-4 py-3">
-                <div className="flex flex-col gap-0.5">
-                  <Badge color={roleColor[u.role]}>{u.role}</Badge>
-                  {u.role === "Tenant" && u.tenant && (
-                    <span className="text-xs text-slate-500">{u.tenant}{u.permissions?.length ? ` · ${u.permissions.length} perms` : ""}</span>
-                  )}
-                </div>
-              </td>
-              <td className="px-4 py-3 text-slate-500">{u.activeFrom || "—"}</td>
+              <td className="px-4 py-3"><Badge color={roleColor[u.role]}>{u.role}</Badge></td>
+              <td className="px-4 py-3">{u.tenant ? <span className="text-slate-600">{u.tenant}</span> : <span className="text-slate-300">—</span>}</td>
               <td className="px-4 py-3"><Badge color={st === "Active" ? "emerald" : st === "Scheduled" ? "amber" : "slate"}>{st}</Badge></td>
               <td className="px-4 py-3"><div className="flex justify-end gap-2">
                 <Btn variant="outline" onClick={() => openModal("edit", u)}><Pencil className="h-3.5 w-3.5" /> Edit</Btn>
@@ -899,9 +895,8 @@ function TenantManagement({ toast, tenants, setTenants }) {
   );
 }
 
-function VehicleManagement({ toast, role, gateEvents = [], addGateEvent }) {
+function VehicleManagement({ toast, role }) {
   const [cat, setCat] = useState("All");
-  const [manualRec, setManualRec] = useState(null); // record for the Manual Gate Open modal
   const [showDeleted, setShowDeleted] = useState(false);
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -909,7 +904,7 @@ function VehicleManagement({ toast, role, gateEvents = [], addGateEvent }) {
   const [vehicles, setVehicles] = useState(VEHICLES);
   const [addModal, setAddModal] = useState(false);
   const [linkView, setLinkView] = useState(null); // vehicle whose correction linkage is shown
-  const BLANK_ADD = { lpn: "", tenant: TENANTS[0].en, category: "Whitelist", floor: "L1", isCorrection: false, origPlate: "", linkedEventId: "", reason: "ANPR mis-read" };
+  const BLANK_ADD = { lpn: "", vehicleType: "Private Car", cat: "Tenant", tenant: TENANTS[0].en, parkingType: "Whitelist" };
   const [addForm, setAddForm] = useState(BLANK_ADD);
   const readOnly = role === "Tenant"; // Tenant: limited edit within whitelist limit (mock)
   const catColor = { Whitelist: "emerald", "Monthly Parking": "blue", Temp: "amber", Blacklist: "red", BMO: "violet" };
@@ -928,22 +923,20 @@ function VehicleManagement({ toast, role, gateEvents = [], addGateEvent }) {
   });
   const clearFilters = () => { setCat("All"); setSearch(""); setDateFrom(""); setDateTo(""); };
 
-  const stampNow = () => `${TODAY} 09:42 · ${(authUserName())}`;
-  function authUserName() { return role === "Tenant" ? "tenant.user" : "bmo.user"; }
   const saveAdd = () => {
-    if (!addForm.lpn.trim()) { toast("Enter the corrected LPN"); return; }
+    if (!addForm.lpn.trim()) { toast("Enter the LPN"); return; }
+    const isTenant = addForm.cat === "Tenant";
+    const category = isTenant ? addForm.parkingType : addForm.cat;
+    const tenant = isTenant ? addForm.tenant : "—";
+    const tObj = TENANTS.find((t) => t.en === tenant);
+    const floor = tObj ? tObj.floor : "—";
+    const gate = tObj ? tObj.gate : "—";
     const id = Math.max(0, ...vehicles.map((v) => v.id)) + 1;
-    const lpn = addForm.lpn.trim().toUpperCase();
-    const linkedEv = gateEvents.find((e) => e.id === addForm.linkedEventId);
     setVehicles((vs) => [...vs, {
-      id, lpn, tenant: addForm.tenant, category: addForm.category, gate: gatesForFloor(addForm.floor)[0], floor: addForm.floor,
-      from: TODAY, to: "2026-12-31", priority: 1, status: "Active", createdAt: `${TODAY} 09:42`, modifiedAt: `${TODAY} 09:42`, deletedAt: null,
-      correctedFrom: addForm.isCorrection && addForm.origPlate.trim()
-        ? { plate: addForm.origPlate.trim().toUpperCase(), ref: linkedEv ? gateEventLabel(linkedEv) : "Manual Gate Open (unspecified)", eventId: addForm.linkedEventId || null, reason: addForm.reason, at: stampNow() }
-        : null,
+      id, lpn: addForm.lpn.trim().toUpperCase(), vehicleType: addForm.vehicleType, tenant, category, gate, floor,
+      from: TODAY, to: "2026-12-31", priority: 1, status: "Active", createdAt: `${TODAY} 09:42`, modifiedAt: `${TODAY} 09:42`, deletedAt: null, correctedFrom: null,
     }]);
-    toast(addForm.isCorrection ? "Corrected record added & linked to mis-read record" : "Vehicle added");
-    setAddModal(false); setAddForm(BLANK_ADD);
+    toast("Vehicle added"); setAddModal(false); setAddForm(BLANK_ADD);
   };
 
   const stamp = () => new Date("2026-06-19T09:42:00").toLocaleString("en-GB").replace(",", "");
@@ -963,9 +956,9 @@ function VehicleManagement({ toast, role, gateEvents = [], addGateEvent }) {
         <Btn onClick={() => { setAddForm(BLANK_ADD); setAddModal(true); }}><Plus className="h-4 w-4" /> Add Vehicle</Btn>
       </SectionTitle>
       <DataTable
-        columns={["LPN", "Category", "Tenant", "Gate", "Floor", "Activation Period", "Priority", "Status", "Audit (DB)", ""]}
+        columns={["LPN", "Type", "Category", "Tenant", "Gate", "Floor", "Activation Period", "Priority", "Status", "Audit (DB)", ""]}
         rows={rows}
-        searchKeys={["lpn", "tenant"]}
+        searchKeys={["lpn", "tenant", "vehicleType"]}
         sortKeys={[{ key: "lpn", label: "LPN", cmp: (a, b) => a.lpn.localeCompare(b.lpn) }, { key: "category", label: "Category", cmp: (a, b) => a.category.localeCompare(b.category) }]}
         filterPanel={
           <div>
@@ -993,6 +986,7 @@ function VehicleManagement({ toast, role, gateEvents = [], addGateEvent }) {
                   </button>
                 )}
               </td>
+              <td className="px-4 py-3 text-slate-500">{v.vehicleType || "—"}</td>
               <td className="px-4 py-3"><Badge color={catColor[v.category]}>{v.category}</Badge></td>
               <td className="px-4 py-3 text-slate-600">{v.tenant}</td>
               <td className="px-4 py-3 text-slate-500">{v.gate}</td>
@@ -1007,8 +1001,6 @@ function VehicleManagement({ toast, role, gateEvents = [], addGateEvent }) {
               </td>
               <td className="px-4 py-3 text-right">
                 <div className="flex justify-end gap-1.5">
-                  {!deleted && v.gate !== "—" && <Btn variant="outline" onClick={() => setManualRec({ floor: v.floor, gate: v.gate, lpn: v.lpn, vehicleId: v.id })} title={`Manual gate open for ${v.lpn}`}><DoorOpen className="h-3.5 w-3.5" /></Btn>}
-                  <Btn variant="outline" onClick={() => toast(readOnly ? "Tenant edit (within limit) saved" : "Vehicle updated")}><Pencil className="h-3.5 w-3.5" /></Btn>
                   {deleted
                     ? <Btn variant="ghost" onClick={() => restore(v.id)} title="Restore"><RotateCcw className="h-3.5 w-3.5" /></Btn>
                     : <Btn variant="danger" onClick={() => softDelete(v.id)} title="Soft-delete"><Trash2 className="h-3.5 w-3.5" /></Btn>}
@@ -1020,51 +1012,21 @@ function VehicleManagement({ toast, role, gateEvents = [], addGateEvent }) {
       />
       <p className="mt-3 text-xs text-slate-400">Soft-delete: records are marked inactive and retained in DB with Create / Modify / Delete timestamps for audit. Single tenant can span multiple floors with priority ordering.</p>
 
-      {/* Manual Gate Open — general (pick gate) or tied to a specific vehicle row */}
-      <ManualGateModal open={!!manualRec} record={manualRec} onClose={() => setManualRec(null)} onConfirm={({ reason, remark, photo, time, floor, gate }) => {
-        const knownPlate = manualRec?.lpn && manualRec.lpn !== "(manual)";
-        addGateEvent?.({ time: time || `${TODAY} 09:42`, floor, gate, plate: knownPlate ? manualRec.lpn : "(unread)", reason, vehicleId: manualRec?.vehicleId || null });
-        toast(knownPlate ? `Gate opened for ${manualRec.lpn} · linked to its record` : `${floor} · ${gate} opened · logged for vehicle linkage`);
-        setManualRec(null);
-      }} />
-
-      {/* Add Vehicle / Correction modal */}
-      <Modal open={addModal} onClose={() => setAddModal(false)} title="Add Vehicle" wide>
+      {/* Add Vehicle modal */}
+      <Modal open={addModal} onClose={() => setAddModal(false)} title="Add Vehicle">
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="mb-1 block text-xs text-slate-500">Corrected LPN</label><Input value={addForm.lpn} onChange={(e) => setAddForm({ ...addForm, lpn: e.target.value })} placeholder="e.g. KL2088" className="font-mono uppercase" /></div>
-            <div><label className="mb-1 block text-xs text-slate-500">Tenant</label><Select value={addForm.tenant} onChange={(e) => setAddForm({ ...addForm, tenant: e.target.value })}>{TENANTS.map((t) => <option key={t.id} value={t.en}>{t.en}</option>)}</Select></div>
-            <div><label className="mb-1 block text-xs text-slate-500">Category</label><Select value={addForm.category} onChange={(e) => setAddForm({ ...addForm, category: e.target.value })}>{VEHICLE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</Select></div>
-            <div><label className="mb-1 block text-xs text-slate-500">Floor</label><Select value={addForm.floor} onChange={(e) => setAddForm({ ...addForm, floor: e.target.value })}>{FLOORS.map((f) => <option key={f}>{f}</option>)}</Select></div>
+            <div><label className="mb-1 block text-xs text-slate-500">LPN</label><Input value={addForm.lpn} onChange={(e) => setAddForm({ ...addForm, lpn: e.target.value })} placeholder="e.g. RA1234" className="font-mono uppercase" /></div>
+            <div><label className="mb-1 block text-xs text-slate-500">Vehicle Type</label><Select value={addForm.vehicleType} onChange={(e) => setAddForm({ ...addForm, vehicleType: e.target.value })}>{VEHICLE_TYPES.map((v) => <option key={v}>{v}</option>)}</Select></div>
+            <div><label className="mb-1 block text-xs text-slate-500">Category</label><Select value={addForm.cat} onChange={(e) => setAddForm({ ...addForm, cat: e.target.value })}>{VEHICLE_TOP_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</Select></div>
+            {addForm.cat === "Tenant" && (
+              <div><label className="mb-1 block text-xs text-slate-500">Parking Type</label><Select value={addForm.parkingType} onChange={(e) => setAddForm({ ...addForm, parkingType: e.target.value })}>{TENANT_PARKING_TYPES.map((p) => <option key={p}>{p}</option>)}</Select></div>
+            )}
           </div>
-
-          <label className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
-            <input type="checkbox" checked={addForm.isCorrection} onChange={(e) => setAddForm({ ...addForm, isCorrection: e.target.checked })} className="accent-[#1A5CFF]" />
-            This corrects a mis-read ANPR record (link for audit)
-          </label>
-
-          {addForm.isCorrection && (
-            <div className="space-y-3 rounded-lg p-3 ring-1 ring-[#1A5CFF]/20">
-              <p className="text-xs text-slate-500">After the guard manually opened the gate for a mis-read plate and the vehicle has left, add the corrected record here and link it to the original event.</p>
-              <div>
-                <label className="mb-1 block text-xs text-slate-500">Linked Manual Gate Open event</label>
-                <Select value={addForm.linkedEventId} onChange={(e) => {
-                  const ev = gateEvents.find((x) => x.id === e.target.value);
-                  setAddForm({ ...addForm, linkedEventId: e.target.value, origPlate: ev && ev.plate && !ev.plate.startsWith("(") ? ev.plate : addForm.origPlate, reason: ev?.reason || addForm.reason });
-                }}>
-                  <option value="">Select a gate-open event…</option>
-                  {gateEvents.map((ev) => <option key={ev.id} value={ev.id}>{gateEventLabel(ev)}</option>)}
-                </Select>
-                <p className="mt-1 text-[11px] text-slate-400">From CCTV / In-Out manual gate opens. Selecting one auto-fills the mis-read plate &amp; reason.</p>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="mb-1 block text-xs text-slate-500">Original (mis-read) LPN</label><Input value={addForm.origPlate} onChange={(e) => setAddForm({ ...addForm, origPlate: e.target.value })} placeholder="e.g. KL2O88" className="font-mono uppercase" /></div>
-                <div><label className="mb-1 block text-xs text-slate-500">Reason</label><Select value={addForm.reason} onChange={(e) => setAddForm({ ...addForm, reason: e.target.value })}><option>ANPR mis-read</option><option>Plate obscured / dirty</option><option>No plate detected</option><option>Others</option></Select></div>
-              </div>
-            </div>
+          {addForm.cat === "Tenant" && (
+            <div><label className="mb-1 block text-xs text-slate-500">Tenant Name</label><Select value={addForm.tenant} onChange={(e) => setAddForm({ ...addForm, tenant: e.target.value })}>{TENANTS.map((t) => <option key={t.id} value={t.en}>{t.en} · {t.zh}</option>)}</Select></div>
           )}
-
-          <div className="flex justify-end gap-2 pt-1"><Btn variant="ghost" onClick={() => setAddModal(false)}>Cancel</Btn><Btn onClick={saveAdd}><Save className="h-4 w-4" /> {addForm.isCorrection ? "Add & Link" : "Add Vehicle"}</Btn></div>
+          <div className="flex justify-end gap-2 pt-1"><Btn variant="ghost" onClick={() => setAddModal(false)}>Cancel</Btn><Btn onClick={saveAdd}><Save className="h-4 w-4" /> Add Vehicle</Btn></div>
         </div>
       </Modal>
 
@@ -1339,7 +1301,7 @@ function DataTable({ columns, rows, searchKeys = [], sortKeys, renderRow, filter
   );
 }
 
-function RecordTable({ kind, toast, addGateEvent }) {
+function RecordTable({ kind, toast, addGateEvent, gateEvents = [] }) {
   const [rows, setRows] = useState(() => {
     const base = genRecords(kind);
     if (kind !== "manual") return base;
@@ -1351,6 +1313,26 @@ function RecordTable({ kind, toast, addGateEvent }) {
     }));
   });
   const [photoView, setPhotoView] = useState(null);
+  const BLANK_REC = { lpn: "", vehicleType: "Private Car", floor: "L1", tenant: TENANTS[0].en, entry: "2026-06-19 09:42", exit: "2026-06-19 11:42", isCorrection: false, origPlate: "", linkedEventId: "", reason: "ANPR mis-read" };
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState(BLANK_REC);
+  const [linkView, setLinkView] = useState(null); // record whose correction linkage is shown
+
+  const saveRecord = () => {
+    if (!addForm.lpn.trim()) { toast("Enter the LPN"); return; }
+    const linkedEv = gateEvents.find((e) => e.id === addForm.linkedEventId);
+    const newRow = {
+      id: `${kind}-new-${Date.now()}`, lpn: addForm.lpn.trim().toUpperCase(), gate: gatesForFloor(addForm.floor)[0],
+      vehicleType: addForm.vehicleType, floor: addForm.floor, tenant: addForm.tenant, entry: addForm.entry,
+      exit: kind === "out" ? addForm.exit : "—", manualReason: kind === "manual" ? addForm.reason : undefined,
+      correctedFrom: addForm.isCorrection && addForm.origPlate.trim()
+        ? { plate: addForm.origPlate.trim().toUpperCase(), ref: linkedEv ? gateEventLabel(linkedEv) : "Manual Gate Open (unspecified)", eventId: addForm.linkedEventId || null, reason: addForm.reason, at: `${TODAY} 09:42` }
+        : null,
+    };
+    setRows((rs) => [newRow, ...rs]);
+    toast(addForm.isCorrection ? "Record added & linked to mis-read event" : "In/Out record added");
+    setAddOpen(false); setAddForm(BLANK_REC);
+  };
   const [floor, setFloor] = useState("All");
   const [gate, setGate] = useState("All");
   const [tenant, setTenant] = useState("All");
@@ -1391,10 +1373,13 @@ function RecordTable({ kind, toast, addGateEvent }) {
 
   return (
     <div>
-      {/* Filters / Sort controls (top-right) */}
-      <div className="mb-3 flex items-center justify-end gap-2.5">
-        <ControlBtn icon={SlidersHorizontal} active={showFilters} onClick={() => setShowFilters((s) => !s)}>Filters</ControlBtn>
-        <ControlBtn icon={ArrowDownUp} onClick={() => setSortKey((k) => (k === "entry" ? "lpn" : "entry"))}>Sort by: {sortKey === "entry" ? "Latest Entry" : "LPN"}</ControlBtn>
+      {/* Add record + Filters / Sort controls */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2.5">
+        <Btn onClick={() => { setAddForm(BLANK_REC); setAddOpen(true); }}><Plus className="h-4 w-4" /> Add In/Out Record</Btn>
+        <div className="flex items-center gap-2.5">
+          <ControlBtn icon={SlidersHorizontal} active={showFilters} onClick={() => setShowFilters((s) => !s)}>Filters</ControlBtn>
+          <ControlBtn icon={ArrowDownUp} onClick={() => setSortKey((k) => (k === "entry" ? "lpn" : "entry"))}>Sort by: {sortKey === "entry" ? "Latest Entry" : "LPN"}</ControlBtn>
+        </div>
       </div>
 
       {/* Collapsible advanced filters */}
@@ -1430,6 +1415,9 @@ function RecordTable({ kind, toast, addGateEvent }) {
                       className="w-28 rounded bg-white px-2 py-1 font-mono text-sm text-[#1A5CFF] ring-1 ring-[#1A5CFF]/60 focus:outline-none" />
                   ) : (
                     <button onClick={() => setEditing(r.id)} title="Click to edit LPN" className="font-mono font-semibold text-slate-800 underline decoration-dotted decoration-slate-300 underline-offset-4 hover:text-[#1A5CFF]">{r.lpn}</button>
+                  )}
+                  {r.correctedFrom && (
+                    <button onClick={() => setLinkView(r)} className="mt-0.5 flex items-center gap-1 text-[11px] text-[#1A5CFF] hover:underline"><Link2 className="h-3 w-3" /> from {r.correctedFrom.plate}</button>
                   )}
                 </td>
                 <td className="px-4 py-2.5 text-slate-600">{r.gate}</td>
@@ -1467,6 +1455,65 @@ function RecordTable({ kind, toast, addGateEvent }) {
         </table>
         </div>
       </Card>
+
+      {/* Add In/Out Record modal (with optional ANPR mis-read correction link) */}
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add In / Out Record" wide={addForm.isCorrection}>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="mb-1 block text-xs text-slate-500">LPN</label><Input value={addForm.lpn} onChange={(e) => setAddForm({ ...addForm, lpn: e.target.value })} placeholder="e.g. RA1234" className="font-mono uppercase" /></div>
+            <div><label className="mb-1 block text-xs text-slate-500">Vehicle Type</label><Select value={addForm.vehicleType} onChange={(e) => setAddForm({ ...addForm, vehicleType: e.target.value })}>{VEHICLE_TYPES.map((v) => <option key={v}>{v}</option>)}</Select></div>
+            <div><label className="mb-1 block text-xs text-slate-500">Floor</label><Select value={addForm.floor} onChange={(e) => setAddForm({ ...addForm, floor: e.target.value })}>{FLOORS.map((f) => <option key={f}>{f}</option>)}</Select></div>
+            <div><label className="mb-1 block text-xs text-slate-500">Tenant</label><Select value={addForm.tenant} onChange={(e) => setAddForm({ ...addForm, tenant: e.target.value })}>{TENANTS.map((t) => <option key={t.id} value={t.en}>{t.en}</option>)}</Select></div>
+            <div><label className="mb-1 block text-xs text-slate-500">Entry Time</label><Input value={addForm.entry} onChange={(e) => setAddForm({ ...addForm, entry: e.target.value })} /></div>
+            {kind === "out" && <div><label className="mb-1 block text-xs text-slate-500">Exit Time</label><Input value={addForm.exit} onChange={(e) => setAddForm({ ...addForm, exit: e.target.value })} /></div>}
+          </div>
+
+          <label className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700 ring-1 ring-slate-200">
+            <input type="checkbox" checked={addForm.isCorrection} onChange={(e) => setAddForm({ ...addForm, isCorrection: e.target.checked })} className="accent-[#1A5CFF]" />
+            This corrects a mis-read ANPR record (link for audit)
+          </label>
+
+          {addForm.isCorrection && (
+            <div className="space-y-3 rounded-lg p-3 ring-1 ring-[#1A5CFF]/20">
+              <p className="text-xs text-slate-500">When the guard manually opened the gate for a mis-read plate, link this corrected record to that event.</p>
+              <div><label className="mb-1 block text-xs text-slate-500">Linked Manual Gate Open event</label>
+                <Select value={addForm.linkedEventId} onChange={(e) => {
+                  const ev = gateEvents.find((x) => x.id === e.target.value);
+                  setAddForm({ ...addForm, linkedEventId: e.target.value, origPlate: ev && ev.plate && !ev.plate.startsWith("(") ? ev.plate : addForm.origPlate, reason: ev?.reason || addForm.reason });
+                }}>
+                  <option value="">Select a gate-open event…</option>
+                  {gateEvents.map((ev) => <option key={ev.id} value={ev.id}>{gateEventLabel(ev)}</option>)}
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="mb-1 block text-xs text-slate-500">Original (mis-read) LPN</label><Input value={addForm.origPlate} onChange={(e) => setAddForm({ ...addForm, origPlate: e.target.value })} placeholder="e.g. KL2O88" className="font-mono uppercase" /></div>
+                <div><label className="mb-1 block text-xs text-slate-500">Reason</label><Select value={addForm.reason} onChange={(e) => setAddForm({ ...addForm, reason: e.target.value })}><option>ANPR mis-read</option><option>Plate obscured / dirty</option><option>No plate detected</option><option>Others</option></Select></div>
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-1"><Btn variant="ghost" onClick={() => setAddOpen(false)}>Cancel</Btn><Btn onClick={saveRecord}><Save className="h-4 w-4" /> {addForm.isCorrection ? "Add & Link" : "Add Record"}</Btn></div>
+        </div>
+      </Modal>
+
+      {/* Correction linkage audit view */}
+      <Modal open={!!linkView} onClose={() => setLinkView(null)} title="Record Linkage — Audit">
+        {linkView && (
+          <div className="space-y-3">
+            <div className="rounded-lg bg-red-50 p-3 ring-1 ring-red-200">
+              <div className="text-xs font-medium text-red-700">Original — ANPR mis-read</div>
+              <div className="mt-1 font-mono text-lg font-bold text-red-700">{linkView.correctedFrom.plate}</div>
+              <div className="text-xs text-red-600/80">{linkView.correctedFrom.ref} · {linkView.correctedFrom.reason}</div>
+            </div>
+            <div className="flex items-center justify-center text-slate-400"><CornerDownRight className="h-5 w-5" /></div>
+            <div className="rounded-lg bg-emerald-50 p-3 ring-1 ring-emerald-200">
+              <div className="text-xs font-medium text-emerald-700">Corrected record</div>
+              <div className="mt-1 font-mono text-lg font-bold text-emerald-700">{linkView.lpn}</div>
+              <div className="text-xs text-emerald-700/80">{linkView.tenant} · {linkView.floor} · {linkView.entry}</div>
+            </div>
+            <div className="flex justify-end pt-1"><Btn variant="ghost" onClick={() => setLinkView(null)}>Close</Btn></div>
+          </div>
+        )}
+      </Modal>
 
       <CCTVModal open={!!cctv} lpn={cctv} onClose={() => setCctv(null)} />
       <PhotoViewModal open={!!photoView} record={photoView} onClose={() => setPhotoView(null)} />
@@ -1557,7 +1604,7 @@ function TruckTripRecord({ toast }) {
   );
 }
 
-function InOutRecords({ toast, addGateEvent }) {
+function InOutRecords({ toast, addGateEvent, gateEvents = [] }) {
   const tabs = [
     { id: "in", label: "In Record" },
     { id: "out", label: "Out Record" },
@@ -1576,7 +1623,7 @@ function InOutRecords({ toast, addGateEvent }) {
       {tab === "truck" ? (
         <TruckTripRecord toast={toast} />
       ) : (
-        <RecordTable kind={tab} toast={toast} addGateEvent={addGateEvent} />
+        <RecordTable kind={tab} toast={toast} addGateEvent={addGateEvent} gateEvents={gateEvents} />
       )}
     </div>
   );
@@ -2101,8 +2148,8 @@ export default function App() {
       case "dashboard": return <Dashboard />;
       case "users": return <UserManagement toast={toast} role={role} authUser={authUser} />;
       case "tenants": return <TenantManagement toast={toast} tenants={tenants} setTenants={setTenants} />;
-      case "vehicles": return <VehicleManagement toast={toast} role={role} gateEvents={gateEvents} addGateEvent={addGateEvent} />;
-      case "records": return <InOutRecords toast={toast} addGateEvent={addGateEvent} />;
+      case "vehicles": return <VehicleManagement toast={toast} role={role} />;
+      case "records": return <InOutRecords toast={toast} addGateEvent={addGateEvent} gateEvents={gateEvents} />;
       case "pos": return <PosManagement toast={toast} />;
       case "cctv": return <CctvLiveview toast={toast} addGateEvent={addGateEvent} />;
       case "reports": return <Reports toast={toast} role={role} />;
