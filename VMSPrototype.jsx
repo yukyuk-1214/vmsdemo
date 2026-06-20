@@ -1806,7 +1806,7 @@ function PosManagement({ toast }) {
 }
 
 /* ------------------------------- CCTV Live -------------------------------- */
-function CctvLiveview({ toast, addGateEvent }) {
+function CctvLiveview({ toast, addGateEvent, addIoRecord }) {
   const [floor, setFloor] = useState("L3");
   const gates = gatesForFloor(floor);
   const [manualGate, setManualGate] = useState(null); // the specific gate being opened
@@ -1841,10 +1841,16 @@ function CctvLiveview({ toast, addGateEvent }) {
       <ManualGateModal open={!!manualGate} record={{ floor, gate: manualGate || "Gate", lpn: "(live)" }}
         vehicles={VEHICLES.filter((v) => v.status !== "Deleted" && v.gate !== "—").map((v) => ({ ...v, entryTime: `2026-06-19 0${7 + (v.id % 3)}:${String((v.id * 7) % 60).padStart(2, "0")}` }))}
         onClose={() => setManualGate(null)}
-        onConfirm={({ reason, time, plate, linkedVehicleId }) => {
-          // Log a manual gate-open event, optionally linked to a vehicle record.
-          addGateEvent?.({ time: time || `${TODAY} 09:42`, floor, gate: manualGate, plate: linkedVehicleId ? plate : "(unread)", reason, vehicleId: linkedVehicleId });
-          toast(linkedVehicleId ? `${floor} · ${manualGate} opened · linked to ${plate}` : `${floor} · ${manualGate} opened · ${reason}`);
+        onConfirm={({ reason, time, plate, linkedVehicleId, photo }) => {
+          const t = time || `${TODAY} 09:42`;
+          const v = VEHICLES.find((x) => x.id === linkedVehicleId);
+          const lpn = linkedVehicleId ? plate : "(unread)";
+          // Log the gate-open event and create persistent Manual + In records.
+          addGateEvent?.({ time: t, floor, gate: manualGate, plate: lpn, reason, vehicleId: linkedVehicleId });
+          const base = { lpn, gate: manualGate, floor, vehicleType: v?.vehicleType || "Private Car", tenant: v?.tenant || "—", entry: t };
+          addIoRecord?.("manual", { ...base, id: `mg-${Date.now()}`, manualReason: reason, photo });
+          addIoRecord?.("in", { ...base, id: `in-${Date.now() + 1}`, exit: "—" });
+          toast(linkedVehicleId ? `Gate opened · linked to ${plate} · In record created` : `${floor} · ${manualGate} opened · record created`);
           setManualGate(null);
         }} />
     </div>
@@ -2131,6 +2137,8 @@ export default function App() {
   const handleRegister = (acc) => { setAccounts((a) => [...a, acc]); };
   const handleLogout = () => { setAuthUser(null); setUserOpen(false); };
   const addGateEvent = (ev) => setGateEvents((g) => [{ id: `MG-${1001 + g.length}`, by: authUser?.login || "guard", ...ev }, ...g]);
+  // Append a real In/Out record so every gate action leaves a persistent record.
+  const addIoRecord = (kind, row) => setIoRecords((prev) => ({ ...prev, [kind]: [{ _added: Date.now(), ...row }, ...(prev[kind] || [])] }));
 
   const allowedNav = NAV.filter((n) => MODULE_ACCESS[n.id].includes(role));
 
@@ -2156,7 +2164,7 @@ export default function App() {
       case "vehicles": return <VehicleManagement toast={toast} role={role} />;
       case "records": return <InOutRecords toast={toast} addGateEvent={addGateEvent} gateEvents={gateEvents} ioRecords={ioRecords} setIoRecords={setIoRecords} />;
       case "pos": return <PosManagement toast={toast} />;
-      case "cctv": return <CctvLiveview toast={toast} addGateEvent={addGateEvent} />;
+      case "cctv": return <CctvLiveview toast={toast} addGateEvent={addGateEvent} addIoRecord={addIoRecord} />;
       case "reports": return <Reports toast={toast} role={role} />;
       case "audit": return <AuditLog />;
       case "syslog": return <SystemLog />;
