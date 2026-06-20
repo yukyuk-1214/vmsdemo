@@ -1301,17 +1301,7 @@ function DataTable({ columns, rows, searchKeys = [], sortKeys, renderRow, filter
   );
 }
 
-function RecordTable({ kind, toast, addGateEvent, gateEvents = [] }) {
-  const [rows, setRows] = useState(() => {
-    const base = genRecords(kind);
-    if (kind !== "manual") return base;
-    // Existing manual-open records already carry a captured snapshot + reason.
-    return base.map((r, i) => ({
-      ...r,
-      manualReason: GATE_REASONS[i % GATE_REASONS.length],
-      photo: makeSnapshot({ plate: r.lpn, gate: r.gate, floor: r.floor, time: r.entry }),
-    }));
-  });
+function RecordTable({ kind, rows, setRows, toast, addGateEvent, gateEvents = [] }) {
   const [photoView, setPhotoView] = useState(null);
   const BLANK_REC = { lpn: "", vehicleType: "Private Car", floor: "L1", tenant: TENANTS[0].en, entry: "2026-06-19 09:42", exit: "2026-06-19 11:42", isCorrection: false, origPlate: "", linkedEventId: "", reason: "ANPR mis-read" };
   const [addOpen, setAddOpen] = useState(false);
@@ -1610,7 +1600,7 @@ function TruckTripRecord({ toast }) {
   );
 }
 
-function InOutRecords({ toast, addGateEvent, gateEvents = [] }) {
+function InOutRecords({ toast, addGateEvent, gateEvents = [], ioRecords, setIoRecords }) {
   const tabs = [
     { id: "in", label: "In Record" },
     { id: "out", label: "Out Record" },
@@ -1618,6 +1608,8 @@ function InOutRecords({ toast, addGateEvent, gateEvents = [] }) {
     { id: "truck", label: "Truck Trip Record" },
   ];
   const [tab, setTab] = useState("in");
+  // Write back to the App-level store for the active kind.
+  const setRows = (updater) => setIoRecords((prev) => ({ ...prev, [tab]: typeof updater === "function" ? updater(prev[tab]) : updater }));
   return (
     <div>
       <SectionTitle icon={ArrowLeftRight} title="In / Out Records" desc="Gate entry & exit logs · ANPR · manual gate audit" />
@@ -1629,7 +1621,7 @@ function InOutRecords({ toast, addGateEvent, gateEvents = [] }) {
       {tab === "truck" ? (
         <TruckTripRecord toast={toast} />
       ) : (
-        <RecordTable kind={tab} toast={toast} addGateEvent={addGateEvent} gateEvents={gateEvents} />
+        <RecordTable key={tab} kind={tab} rows={ioRecords[tab]} setRows={setRows} toast={toast} addGateEvent={addGateEvent} gateEvents={gateEvents} />
       )}
     </div>
   );
@@ -2115,6 +2107,13 @@ export default function App() {
   const [accounts, setAccounts] = useState(SEED_ACCOUNTS);
   const [tenants, setTenants] = useState(TENANTS);
   const [gateEvents, setGateEvents] = useState(SEED_GATE_EVENTS);
+  // In/Out records lifted to App state (per kind) so added records persist across
+  // tab switches and re-renders instead of resetting with the component.
+  const [ioRecords, setIoRecords] = useState(() => ({
+    in: genRecords("in"),
+    out: genRecords("out"),
+    manual: genRecords("manual").map((r, i) => ({ ...r, manualReason: GATE_REASONS[i % GATE_REASONS.length], photo: makeSnapshot({ plate: r.lpn, gate: r.gate, floor: r.floor, time: r.entry }) })),
+  }));
   const [authUser, setAuthUser] = useState(null); // logged-in account or null
   const [role, setRole] = useState("BMO");
   const [page, setPage] = useState("dashboard");
@@ -2155,7 +2154,7 @@ export default function App() {
       case "users": return <UserManagement toast={toast} role={role} authUser={authUser} />;
       case "tenants": return <TenantManagement toast={toast} tenants={tenants} setTenants={setTenants} />;
       case "vehicles": return <VehicleManagement toast={toast} role={role} />;
-      case "records": return <InOutRecords toast={toast} addGateEvent={addGateEvent} gateEvents={gateEvents} />;
+      case "records": return <InOutRecords toast={toast} addGateEvent={addGateEvent} gateEvents={gateEvents} ioRecords={ioRecords} setIoRecords={setIoRecords} />;
       case "pos": return <PosManagement toast={toast} />;
       case "cctv": return <CctvLiveview toast={toast} addGateEvent={addGateEvent} />;
       case "reports": return <Reports toast={toast} role={role} />;
