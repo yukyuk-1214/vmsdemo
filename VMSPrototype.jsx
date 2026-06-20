@@ -1322,7 +1322,7 @@ function RecordTable({ kind, toast, addGateEvent, gateEvents = [] }) {
     if (!addForm.lpn.trim()) { toast("Enter the LPN"); return; }
     const linkedEv = gateEvents.find((e) => e.id === addForm.linkedEventId);
     const newRow = {
-      id: `${kind}-new-${Date.now()}`, lpn: addForm.lpn.trim().toUpperCase(), gate: gatesForFloor(addForm.floor)[0],
+      id: `${kind}-new-${Date.now()}`, _added: Date.now(), lpn: addForm.lpn.trim().toUpperCase(), gate: gatesForFloor(addForm.floor)[0],
       vehicleType: addForm.vehicleType, floor: addForm.floor, tenant: addForm.tenant, entry: addForm.entry,
       exit: kind === "out" ? addForm.exit : "—", manualReason: kind === "manual" ? addForm.reason : undefined,
       correctedFrom: addForm.isCorrection && addForm.origPlate.trim()
@@ -1330,6 +1330,8 @@ function RecordTable({ kind, toast, addGateEvent, gateEvents = [] }) {
         : null,
     };
     setRows((rs) => [newRow, ...rs]);
+    // Make the new row visible: jump to the first page and clear filters that might hide it.
+    setPage(1); setFloor("All"); setGate("All"); setTenant("All"); setDate(""); setLpnq("");
     toast(addForm.isCorrection ? "Record added & linked to mis-read event" : "In/Out record added");
     setAddOpen(false); setAddForm(BLANK_REC);
   };
@@ -1356,7 +1358,11 @@ function RecordTable({ kind, toast, addGateEvent, gateEvents = [] }) {
       (!date || r.entry.startsWith(date)) &&
       (!lpnq || r.lpn.toLowerCase().includes(lpnq.toLowerCase()))
     )
-    .sort((a, b) => (sortKey === "lpn" ? a.lpn.localeCompare(b.lpn) : b.entry.localeCompare(a.entry)));
+    .sort((a, b) => {
+      // Newly added records float to the top so they're immediately visible.
+      if ((a._added || 0) !== (b._added || 0)) return (b._added || 0) - (a._added || 0);
+      return sortKey === "lpn" ? a.lpn.localeCompare(b.lpn) : b.entry.localeCompare(a.entry);
+    });
 
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const curPage = Math.min(page, pages);
