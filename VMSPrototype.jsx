@@ -312,72 +312,60 @@ function gatewayTxn(method, i) {
   }
 }
 
-function genRecords(kind) {
-  const rows = [];
-  const seed = kind === "out" ? 41 : kind === "manual" ? 73 : 11;
-  for (let i = 0; i < 22; i++) {
-    const tenant = TENANTS[(i + seed) % TENANTS.length];
-    const gate = gatesForFloor(tenant.floor)[i % gatesForFloor(tenant.floor).length];
-    const vt = VEHICLE_TYPES[(i + seed) % VEHICLE_TYPES.length];
-    const hh = String(7 + (i % 12)).padStart(2, "0");
-    const mm = String((i * 7) % 60).padStart(2, "0");
-    rows.push({
-      id: `${kind}-${i}`,
-      lpn: ["RA", "VP", "TM", "GK", "JD", "LX", "PK", "HV"][(i + seed) % 8] + String(1000 + ((i * 137 + seed) % 8999)),
-      gate, vehicleType: vt, floor: tenant.floor, tenant: tenant.en,
-      entry: `2026-06-19 ${hh}:${mm}`,
-      exit: kind === "out" ? `2026-06-19 ${String(+hh + 2).padStart(2, "0")}:${mm}` : "—",
-      manual: i % 5 === 0,
+// Single source of truth: a set of vehicle journeys through the hub. In / Out / POS
+// records and Truck Trips are all derived from these, so the same LPN appears
+// everywhere and pairs up (in ↔ out ↔ payment ↔ trip).
+function genJourneys() {
+  const out = [];
+  for (let i = 0; i < 18; i++) {
+    const t = TENANTS[i % TENANTS.length];
+    const gs = gatesForFloor(t.floor);
+    const gate = gs[i % gs.length];
+    const vt = VEHICLE_TYPES[(i * 2) % 3]; // mix incl. several trucks
+    const hh = String(7 + (i % 10)).padStart(2, "0");
+    const mm = String((i * 13) % 60).padStart(2, "0");
+    const entry = `2026-06-19 ${hh}:${mm}`;
+    const exited = i % 5 !== 0; // ~80% have exited
+    const exHh = String(Math.min(21, 9 + (i % 10))).padStart(2, "0");
+    const exit = exited ? `2026-06-19 ${exHh}:${mm}` : "—";
+    const paid = exited && i % 4 !== 1;
+    const method = PAYMENT_METHODS[i % PAYMENT_METHODS.length];
+    out.push({
+      id: i,
+      lpn: ["RA", "VP", "TM", "GK", "JD", "LX", "PK", "HV"][i % 8] + String(1000 + i * 173),
+      vehicleType: vt, gate, floor: t.floor, tenant: t.en,
+      entry, exit, exited, paid,
+      payTime: paid ? exit : "—", method: paid ? method : "—", amount: 25 + (i % 6) * 15,
     });
   }
-  return rows;
+  return out;
+}
+const JOURNEYS = genJourneys();
+
+function genRecords(kind) {
+  if (kind === "manual") {
+    return JOURNEYS.slice(0, 6).map((j) => ({ id: `mg-${j.id}`, lpn: j.lpn, vehicleType: j.vehicleType, gate: j.gate, floor: j.floor, tenant: j.tenant, entry: j.entry, exit: "—" }));
+  }
+  if (kind === "out") {
+    return JOURNEYS.filter((j) => j.exited).map((j) => ({ id: `out-${j.id}`, lpn: j.lpn, vehicleType: j.vehicleType, gate: j.gate, floor: j.floor, tenant: j.tenant, entry: j.entry, exit: j.exit }));
+  }
+  return JOURNEYS.map((j) => ({ id: `in-${j.id}`, lpn: j.lpn, vehicleType: j.vehicleType, gate: j.gate, floor: j.floor, tenant: j.tenant, entry: j.entry, exit: "—" }));
 }
 
 // paid = settled (receipt issued). status: Original | Corrected (superseded) | Amended (reissue).
-const POS_RECORDS = Array.from({ length: 14 }, (_, i) => {
-  const t = TENANTS[i % TENANTS.length];
-  const paid = i % 5 !== 2; // a few records are still pending (not settled)
-  const method = paid ? PAYMENT_METHODS[i % PAYMENT_METHODS.length] : "—";
-  return {
-    id: i, receiptNo: `CN-${String(100200 + i)}`, lpn: ["RA", "VP", "TM"][i % 3] + String(2200 + i * 31),
-    gate: gatesForFloor(t.floor)[0], vehicleType: VEHICLE_TYPES[i % 3], floor: t.floor, tenant: t.en,
-    entry: `2026-06-19 0${7 + (i % 3)}:1${i % 6}`, exit: `2026-06-19 ${10 + (i % 5)}:2${i % 6}`,
-    payTime: paid ? `2026-06-19 ${10 + (i % 5)}:2${(i % 6) + 1}` : "—",
-    method, txnNo: paid ? gatewayTxn(method, i) : "—",
-    amount: 25 + (i % 6) * 15, paid, status: "Original", correctedFrom: null, amends: null, supersededBy: null,
-  };
-});
+// Derived from the same JOURNEYS as the In/Out records, so an LPN's payment links
+// back to its in/out entries and truck trip.
+const POS_RECORDS = JOURNEYS.filter((j) => j.exited).map((j, i) => ({
+  id: i, receiptNo: `CN-${String(100200 + i)}`, lpn: j.lpn,
+  gate: j.gate, vehicleType: j.vehicleType, floor: j.floor, tenant: j.tenant,
+  entry: j.entry, exit: j.exit,
+  payTime: j.paid ? j.payTime : "—", method: j.paid ? j.method : "—",
+  txnNo: j.paid ? gatewayTxn(j.method, i) : "—",
+  amount: j.amount, paid: j.paid, status: "Original", correctedFrom: null, amends: null, supersededBy: null,
+}));
 
 // Truck Trip Record — pairs each truck's full journey: which gates it passed
 // and any payment action, in time order. (One trip = entry → floor gates → pay → exit.)
-const TRUCK_TRIPS = [
-  {
-    id: "TRP-1001", lpn: "GK4099", tenant: "Kerry Logistics", vehicleType: "Truck", status: "Completed",
-    steps: [
-      { type: "in",   gate: "South Gate", floor: "L1", time: "2026-06-19 07:42", note: "ANPR entry" },
-      { type: "gate", gate: "South Gate", floor: "L6", time: "2026-06-19 07:55", note: "Loading bay access" },
-      { type: "pay",  gate: "POS · MO Room", floor: "L1", time: "2026-06-19 09:10", note: "Octopus", amount: 70 },
-      { type: "out",  gate: "South Gate", floor: "L1", time: "2026-06-19 09:18", note: "ANPR exit" },
-    ],
-  },
-  {
-    id: "TRP-1002", lpn: "TM5566", tenant: "SF Express", vehicleType: "Truck", status: "Completed",
-    steps: [
-      { type: "in",   gate: "North Gate", floor: "L1", time: "2026-06-19 08:05", note: "ANPR entry" },
-      { type: "gate", gate: "North Gate", floor: "L2", time: "2026-06-19 08:14", note: "Dock 3" },
-      { type: "pay",  gate: "POS · WeChat", floor: "L1", time: "2026-06-19 10:02", note: "WeChat", amount: 95 },
-      { type: "out",  gate: "North Gate", floor: "L1", time: "2026-06-19 10:11", note: "ANPR exit" },
-    ],
-  },
-  {
-    id: "TRP-1003", lpn: "LX7788", tenant: "JD Logistics HK", vehicleType: "Truck", status: "In Progress",
-    steps: [
-      { type: "in",   gate: "South Gate", floor: "L1", time: "2026-06-19 09:20", note: "ANPR entry" },
-      { type: "gate", gate: "South Gate", floor: "L7", time: "2026-06-19 09:31", note: "Manual gate · Delivery" },
-    ],
-  },
-];
-
 const AUDIT_LOG = [
   { id: 1, time: "2026-06-19 09:42:11", user: "andy.chan", role: "BMO", action: "Updated whitelist limit for Cainiao Logistics HK (45 → 50)" },
   { id: 2, time: "2026-06-19 09:31:05", user: "kaho.wong", role: "Guard", action: "Manual gate open · North Gate · L3 · Reason: VIP" },
@@ -1525,16 +1513,27 @@ function RecordTable({ kind, rows, setRows, toast, addGateEvent, gateEvents = []
   );
 }
 
-function TruckTripRecord({ toast }) {
+function TruckTripRecord({ toast, ioRecords }) {
   const [q, setQ] = useState("");
-  const [open, setOpen] = useState(TRUCK_TRIPS[0]?.id);
-  const trips = TRUCK_TRIPS.filter((t) => !q || t.lpn.toLowerCase().includes(q.toLowerCase()) || t.tenant.toLowerCase().includes(q.toLowerCase()));
+  const [open, setOpen] = useState(null);
   const stepMeta = {
     in:   { icon: ArrowLeftRight, color: "emerald", label: "Entry" },
     gate: { icon: DoorOpen, color: "blue", label: "Gate Pass" },
     pay:  { icon: CreditCard, color: "violet", label: "Payment" },
     out:  { icon: ArrowLeftRight, color: "amber", label: "Exit" },
   };
+  // Build trips from the live In/Out records (trucks) + matching POS payment.
+  const ins = (ioRecords?.in || []).filter((r) => r.vehicleType === "Truck");
+  const outs = ioRecords?.out || [];
+  const allTrips = ins.map((inRec) => {
+    const outRec = outs.find((o) => o.lpn === inRec.lpn);
+    const pay = POS_RECORDS.find((p) => p.lpn === inRec.lpn && p.paid);
+    const steps = [{ type: "in", gate: inRec.gate, floor: inRec.floor, time: inRec.entry, note: "ANPR entry" }];
+    if (pay) steps.push({ type: "pay", gate: `POS · ${pay.method}`, floor: pay.floor, time: pay.payTime, note: pay.method, amount: pay.amount });
+    if (outRec && outRec.exit && outRec.exit !== "—") steps.push({ type: "out", gate: outRec.gate, floor: outRec.floor, time: outRec.exit, note: "ANPR exit" });
+    return { id: `TRP-${inRec.lpn}`, lpn: inRec.lpn, tenant: inRec.tenant, status: outRec ? "Completed" : "In Progress", steps };
+  });
+  const trips = allTrips.filter((t) => !q || t.lpn.toLowerCase().includes(q.toLowerCase()) || t.tenant.toLowerCase().includes(q.toLowerCase()));
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -1619,7 +1618,7 @@ function InOutRecords({ toast, addGateEvent, gateEvents = [], ioRecords, setIoRe
         ))}
       </div>
       {tab === "truck" ? (
-        <TruckTripRecord toast={toast} />
+        <TruckTripRecord toast={toast} ioRecords={ioRecords} />
       ) : (
         <RecordTable key={tab} kind={tab} rows={ioRecords[tab]} setRows={setRows} toast={toast} addGateEvent={addGateEvent} gateEvents={gateEvents} />
       )}
