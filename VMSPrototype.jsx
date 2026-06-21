@@ -300,12 +300,13 @@ const SEED_GATE_EVENTS = [
 ];
 const gateEventLabel = (ev) => `${ev.id} · ${ev.gate} · ${ev.floor} · ${ev.time} (${ev.plate})`;
 
-// Live queue: vehicles stuck at a gate awaiting a manual open. Auto-generated when
-// ANPR fails to authorise or a driver presses the intercom for the guard.
+// In records are created at the gate (ANPR trigger) with status Pending, then move
+// to Entered once the loop detector confirms entry — or Cancelled / Rejected.
+// These seed the "stuck at gate" Pending cases (ANPR mis-read / intercom call).
 const SEED_PENDING = [
-  { id: "REQ-1041", source: "ANPR Failed", plate: "(unread)", time: "2026-06-19 09:40", floor: "L1", gate: "South Gate" },
-  { id: "REQ-1042", source: "Intercom", plate: "KL2O88", time: "2026-06-19 09:43", floor: "L6", gate: "South Gate" },
-  { id: "REQ-1043", source: "ANPR Failed", plate: "RA1Z34", time: "2026-06-19 09:44", floor: "L3", gate: "North Gate" },
+  { id: "REQ-1041", lpn: "(unread)", vehicleType: "Truck", gate: "South Gate", floor: "L1", tenant: "—", entry: "2026-06-19 09:40", exit: "—", status: "Pending", source: "ANPR Failed" },
+  { id: "REQ-1042", lpn: "KL2O88", vehicleType: "Truck", gate: "South Gate", floor: "L6", tenant: "Kerry Logistics", entry: "2026-06-19 09:43", exit: "—", status: "Pending", source: "Intercom" },
+  { id: "REQ-1043", lpn: "RA1Z34", vehicleType: "Private Car", gate: "North Gate", floor: "L3", tenant: "Cainiao Logistics HK", entry: "2026-06-19 09:44", exit: "—", status: "Pending", source: "ANPR Failed" },
 ];
 const PAYMENT_METHODS = ["Octopus", "WeChat", "Alipay", "Visa / Master"];
 
@@ -1358,7 +1359,8 @@ function RecordTable({ kind, rows, setRows, toast, addGateEvent, addIoRecord, ga
     ? ["LPN", "Gate", "Type", "Entry", "Exit", "Floor", "Tenant", ""]
     : kind === "manual"
     ? ["LPN", "Gate", "Floor", "Time", "Reason", "Photo", ""]
-    : ["LPN", "Gate", "Type", "Entry", "Floor", "Tenant", ""];
+    : ["LPN", "Gate", "Type", "Entry", "Floor", "Tenant", "Status", ""];
+  const ioStatusColor = { Pending: "amber", Entered: "emerald", Cancelled: "slate", "Turned Back": "slate", Rejected: "red" };
 
   const updateLpn = (id, val) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, lpn: val } : r)));
   const clearAll = () => { setFloor("All"); setGate("All"); setTenant("All"); setDate(""); setLpnq(""); };
@@ -1430,6 +1432,7 @@ function RecordTable({ kind, rows, setRows, toast, addGateEvent, addIoRecord, ga
                       {kind === "out" && <td className="px-4 py-2.5 text-slate-500">{r.exit}</td>}
                       <td className="px-4 py-2.5"><Badge color="blue">{r.floor}</Badge></td>
                       <td className="px-4 py-2.5 text-slate-600">{r.tenant}</td>
+                      {kind === "in" && <td className="px-4 py-2.5"><Badge color={ioStatusColor[r.status] || "slate"}>{r.status || "Entered"}</Badge></td>}
                     </>)}
                 <td className="px-4 py-2.5">
                   <div className="flex items-center justify-end gap-1.5">
@@ -1614,51 +1617,76 @@ function TruckTripRecord({ toast, ioRecords }) {
 // Live queue of vehicles stuck at a gate (ANPR failed / intercom). Guard or FM
 // processes each: capture snapshot, open the gate, and it moves to the Manual Gate
 // Open log + creates an In record.
-function PendingGateRequests({ toast, pendingReqs, removePending, addGateEvent, addIoRecord }) {
+// Levenshtein distance for the fuzzy cross-floor plate suggestion.
+function plateDistance(a, b) {
+  a = String(a || "").toUpperCase(); b = String(b || "").toUpperCase();
+  const m = a.length, n = b.length; const d = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[m][n];
+}
+
+function PendingGateRequests({ toast, ioRecords, updateIoRecord, addGateEvent, addIoRecord }) {
   const [active, setActive] = useState(null);
+  const pending = (ioRecords?.in || []).filter((r) => r.status === "Pending");
+  // Cross-floor candidates: vehicles already inside (Entered), sorted by entry time
+  // desc, with the closest plate first (the accurate L1 read to one-click apply).
+  const candidates = (ioRecords?.in || [])
+    .filter((r) => r.status === "Entered")
+    .map((r) => ({ id: r.id, lpn: r.lpn, tenant: r.tenant, floor: r.floor, gate: r.gate, category: r.vehicleType, entryTime: r.entry, dist: active ? plateDistance(active.lpn, r.lpn) : 0 }))
+    .sort((a, b) => a.dist - b.dist || b.entryTime.localeCompare(a.entryTime))
+    .slice(0, 8);
+
   return (
     <div>
-      {pendingReqs.length === 0 ? (
+      <p className="mb-3 text-xs text-slate-400">Vehicles stuck at a gate (ANPR mis-read / intercom). A record is created at the gate as <b>Pending</b>; open the gate to correct the plate and move it to <b>Entered</b>.</p>
+      {pending.length === 0 ? (
         <Card className="p-10 text-center text-sm text-slate-400">No pending gate requests — all clear.</Card>
       ) : (
         <div className="space-y-3">
-          {pendingReqs.map((r) => (
+          {pending.map((r) => (
             <Card key={r.id} className="flex flex-wrap items-center justify-between gap-3 p-4 ring-1 ring-red-200">
               <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-50"><AlertTriangle className="h-5 w-5 text-red-500" /></span>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-mono font-semibold text-slate-800">{r.plate}</span>
-                    <Badge color={r.source === "Intercom" ? "amber" : "red"}>{r.source}</Badge>
+                    <span className="font-mono font-semibold text-slate-800">{r.lpn}</span>
+                    <Badge color={r.source === "Intercom" ? "amber" : "red"}>{r.source || "ANPR Failed"}</Badge>
+                    <Badge color="amber">Pending</Badge>
                   </div>
-                  <div className="text-xs text-slate-500">{r.floor} · {r.gate} · {r.time} · {r.id}</div>
+                  <div className="text-xs text-slate-500">{r.floor} · {r.gate} · {r.entry} · {r.id}</div>
                 </div>
               </div>
               <div className="flex gap-2">
-                <Btn variant="ghost" onClick={() => { removePending(r.id); toast("Request dismissed"); }}>Dismiss</Btn>
-                <Btn onClick={() => setActive(r)}><DoorOpen className="h-4 w-4" /> Open Gate</Btn>
+                <Btn variant="ghost" onClick={() => { updateIoRecord("in", r.id, { status: "Cancelled" }); toast("Marked as turned back / cancelled"); }}>Turned Back</Btn>
+                <Btn onClick={() => setActive(r)}><DoorOpen className="h-4 w-4" /> Open Gate &amp; Correct</Btn>
               </div>
             </Card>
           ))}
         </div>
       )}
-      <ManualGateModal open={!!active} record={active ? { floor: active.floor, gate: active.gate, lpn: active.plate } : null}
+      <ManualGateModal open={!!active} record={active ? { floor: active.floor, gate: active.gate, lpn: active.lpn } : null}
+        vehicles={active ? candidates : null}
         onClose={() => setActive(null)}
-        onConfirm={({ reason, time, photo }) => {
-          const t = time || active.time;
-          const base = { lpn: active.plate, gate: active.gate, floor: active.floor, vehicleType: "Private Car", tenant: "—", entry: t };
-          addGateEvent?.({ time: t, floor: active.floor, gate: active.gate, plate: active.plate, reason });
-          addIoRecord?.("manual", { ...base, id: `mg-${Date.now()}`, manualReason: reason, photo });
-          addIoRecord?.("in", { ...base, id: `in-${Date.now() + 1}`, exit: "—" });
-          removePending(active.id);
-          toast(`Gate opened · ${active.plate} · request cleared`);
+        onConfirm={({ reason, time, photo, plate, linkedVehicleId }) => {
+          const t = time || active.entry;
+          const corrected = linkedVehicleId ? plate : active.lpn;
+          const changed = corrected !== active.lpn;
+          // Loop detector confirms entry: Pending -> Entered, lock time, correct plate.
+          updateIoRecord("in", active.id, {
+            status: "Entered", lpn: corrected, entry: t, photo,
+            correctedFrom: changed ? { plate: active.lpn, ref: `Manual gate open · ${active.gate} · ${t}`, reason, at: `${TODAY} 09:42` } : (active.correctedFrom || null),
+          });
+          addGateEvent?.({ time: t, floor: active.floor, gate: active.gate, plate: corrected, reason });
+          addIoRecord?.("manual", { id: `mg-${Date.now()}`, lpn: corrected, vehicleType: active.vehicleType, gate: active.gate, floor: active.floor, tenant: active.tenant, entry: t, exit: "—", manualReason: reason, photo });
+          toast(changed ? `Gate opened · corrected to ${corrected} · Entered` : `Gate opened · ${corrected} · Entered`);
           setActive(null);
         }} />
     </div>
   );
 }
 
-function InOutRecords({ toast, addGateEvent, addIoRecord, gateEvents = [], ioRecords, setIoRecords, pendingReqs = [], removePending }) {
+function InOutRecords({ toast, addGateEvent, addIoRecord, updateIoRecord, gateEvents = [], ioRecords, setIoRecords }) {
   const tabs = [
     { id: "pending", label: "Pending Gate Requests" },
     { id: "in", label: "In Record" },
@@ -1667,21 +1695,22 @@ function InOutRecords({ toast, addGateEvent, addIoRecord, gateEvents = [], ioRec
     { id: "truck", label: "Truck Trip Record" },
   ];
   const [tab, setTab] = useState("pending");
+  const pendingCount = (ioRecords?.in || []).filter((r) => r.status === "Pending").length;
   // Write back to the App-level store for the active kind.
   const setRows = (updater) => setIoRecords((prev) => ({ ...prev, [tab]: typeof updater === "function" ? updater(prev[tab]) : updater }));
   return (
     <div>
-      <SectionTitle icon={ArrowLeftRight} title="In / Out Records" desc="Gate entry & exit logs · ANPR · manual gate audit" />
+      <SectionTitle icon={ArrowLeftRight} title="In / Out Records" desc="ANPR-triggered record lifecycle · Pending → Entered · manual gate audit" />
       <div className="mb-4 flex flex-wrap gap-6 border-b border-slate-200">
         {tabs.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} className={`-mb-px flex items-center gap-1.5 border-b-2 pb-2.5 text-sm transition focus:outline-none ${tab === t.id ? "border-[#1A5CFF] font-semibold text-[#1A5CFF]" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
             {t.label}
-            {t.id === "pending" && pendingReqs.length > 0 && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">{pendingReqs.length}</span>}
+            {t.id === "pending" && pendingCount > 0 && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">{pendingCount}</span>}
           </button>
         ))}
       </div>
       {tab === "pending" ? (
-        <PendingGateRequests toast={toast} pendingReqs={pendingReqs} removePending={removePending} addGateEvent={addGateEvent} addIoRecord={addIoRecord} />
+        <PendingGateRequests toast={toast} ioRecords={ioRecords} updateIoRecord={updateIoRecord} addGateEvent={addGateEvent} addIoRecord={addIoRecord} />
       ) : tab === "truck" ? (
         <TruckTripRecord toast={toast} ioRecords={ioRecords} />
       ) : (
@@ -1913,7 +1942,7 @@ function CctvLiveview({ toast, addGateEvent, addIoRecord }) {
           addGateEvent?.({ time: t, floor, gate: manualGate, plate: lpn, reason, vehicleId: linkedVehicleId });
           const base = { lpn, gate: manualGate, floor, vehicleType: v?.vehicleType || "Private Car", tenant: v?.tenant || "—", entry: t };
           addIoRecord?.("manual", { ...base, id: `mg-${Date.now()}`, manualReason: reason, photo });
-          addIoRecord?.("in", { ...base, id: `in-${Date.now() + 1}`, exit: "—" });
+          addIoRecord?.("in", { ...base, id: `in-${Date.now() + 1}`, exit: "—", status: "Entered" });
           toast(linkedVehicleId ? `Gate opened · linked to ${plate} · In record created` : `${floor} · ${manualGate} opened · record created`);
           setManualGate(null);
         }} />
@@ -2177,11 +2206,11 @@ export default function App() {
   const [accounts, setAccounts] = useState(SEED_ACCOUNTS);
   const [tenants, setTenants] = useState(TENANTS);
   const [gateEvents, setGateEvents] = useState(SEED_GATE_EVENTS);
-  const [pendingReqs, setPendingReqs] = useState(SEED_PENDING);
   // In/Out records lifted to App state (per kind) so added records persist across
   // tab switches and re-renders instead of resetting with the component.
   const [ioRecords, setIoRecords] = useState(() => ({
-    in: genRecords("in"),
+    // Pending (stuck-at-gate) records first, then the already-entered ones.
+    in: [...SEED_PENDING, ...genRecords("in").map((r) => ({ ...r, status: "Entered" }))],
     out: genRecords("out"),
     manual: genRecords("manual").map((r, i) => ({ ...r, manualReason: GATE_REASONS[i % GATE_REASONS.length], photo: makeSnapshot({ plate: r.lpn, gate: r.gate, floor: r.floor, time: r.entry }) })),
   }));
@@ -2204,7 +2233,7 @@ export default function App() {
   const addGateEvent = (ev) => setGateEvents((g) => [{ id: `MG-${1001 + g.length}`, by: authUser?.login || "guard", ...ev }, ...g]);
   // Append a real In/Out record so every gate action leaves a persistent record.
   const addIoRecord = (kind, row) => setIoRecords((prev) => ({ ...prev, [kind]: [{ _added: Date.now(), ...row }, ...(prev[kind] || [])] }));
-  const removePending = (id) => setPendingReqs((p) => p.filter((r) => r.id !== id));
+  const updateIoRecord = (kind, id, patch) => setIoRecords((prev) => ({ ...prev, [kind]: prev[kind].map((r) => (r.id === id ? { ...r, ...patch } : r)) }));
 
   const allowedNav = NAV.filter((n) => MODULE_ACCESS[n.id].includes(role));
 
@@ -2228,7 +2257,7 @@ export default function App() {
       case "users": return <UserManagement toast={toast} role={role} authUser={authUser} />;
       case "tenants": return <TenantManagement toast={toast} tenants={tenants} setTenants={setTenants} />;
       case "vehicles": return <VehicleManagement toast={toast} role={role} />;
-      case "records": return <InOutRecords toast={toast} addGateEvent={addGateEvent} addIoRecord={addIoRecord} gateEvents={gateEvents} ioRecords={ioRecords} setIoRecords={setIoRecords} pendingReqs={pendingReqs} removePending={removePending} />;
+      case "records": return <InOutRecords toast={toast} addGateEvent={addGateEvent} addIoRecord={addIoRecord} updateIoRecord={updateIoRecord} gateEvents={gateEvents} ioRecords={ioRecords} setIoRecords={setIoRecords} />;
       case "pos": return <PosManagement toast={toast} />;
       case "cctv": return <CctvLiveview toast={toast} addGateEvent={addGateEvent} addIoRecord={addIoRecord} />;
       case "reports": return <Reports toast={toast} role={role} />;
